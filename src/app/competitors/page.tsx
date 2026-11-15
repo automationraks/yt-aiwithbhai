@@ -14,11 +14,13 @@ type Competitor = {
   ai_production_review_note: string | null;
 };
 
-const defaultKeywords = "faceless factory documentary AI voiceover
-AI generated industrial process animation
-manufacturing process documentary no presenter
-AI narrated engineering documentary
-factory production process cinematic documentary";
+const defaultKeywords = [
+  "faceless factory documentary AI voiceover",
+  "AI generated industrial process animation",
+  "manufacturing process documentary no presenter",
+  "AI narrated engineering documentary",
+  "factory production process cinematic documentary",
+].join("\\n");
 function compact(value: number | string | null) {
   const number = Number(value ?? 0);
   return Number.isFinite(number) ? new Intl.NumberFormat("en", { notation: "compact", maximumFractionDigits: 1 }).format(number) : "—";
@@ -72,7 +74,7 @@ export default function CompetitorExplorerPage() {
       const result = await response.json();
       if (!response.ok) throw new Error(result.error || "Discovery failed.");
       setLastDiscovery(result);
-      setNotice("Discovery complete: " + result.saved + " new competitors added from " + result.channelsDiscovered + " channels found.");
+      setNotice("Discovery complete: " + result.saved + " new review candidates added from " + result.channelsDiscovered + " channels found.");
       await loadCompetitors();
     } catch (err) { setError(err instanceof Error ? err.message : "Discovery failed."); }
     finally { setDiscovering(false); }
