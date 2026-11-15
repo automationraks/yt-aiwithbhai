@@ -1,0 +1,177 @@
+import { NextRequest, NextResponse } from "next/server";
+import { createSupabaseServerClient } from "@/lib/supabase/server";
+import { getAIConfiguration } from "@/lib/ai/provider";
+
+export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
+
+type Sample = { title?: string; description?: string; videoUrl?: string | null; thumbnailUrl?: string | null; matchedQuery?: string };
+type ImagePart = { inlineData: { mimeType: string; data: string } };
+
+async function getThumbnail(url: string): Promise<ImagePart | null> {
+  try {
+    const parsed = new URL(url);
+    const allowed = ["i.ytimg.com", "yt3.ggpht.com"];
+    if (parsed.protocol !== "https:" || !allowed.some((host) => parsed.hostname === host || parsed.hostname.endsWith("." + host))) return null;
+    const response = await fetch(parsed, { signal: AbortSignal.timeout(7000), cache: "no-store" });
+    if (!response.ok) return null;
+    const mimeType = response.headers.get("content-type")?.split(";")[0] ?? "";
+    if (!["image/jpeg", "image/png", "image/webp"].includes(mimeType)) return null;
+    const bytes = new Uint8Array(await response.arrayBuffer());
+    if (!bytes.length || bytes.length > 1_500_000) return null;
+    return { inlineData: { mimeType, data: Buffer.from(bytes).toString("base64") } };
+  } catch { return null; }
+}
+
+const instruction = `You are screening YouTube channels for a research database. Target: channels about industrial manufacturing/engineering whose videos are mostly faceless and plausibly use AI-generated visuals and synthetic narration. Do NOT confuse channels discussing AI technology with channels produced using AI.
+
+Assess only the supplied channel description, sample video titles/descriptions, and thumbnails. Thumbnails can suggest visual style but cannot prove that visuals were AI-generated. Metadata cannot establish whether narration is synthetic. Never claim you heard audio or watched the full videos. Treat explicit creator disclosure as stronger evidence than visual guesses.
+
+Return ONLY JSON with this exact structure:
+{
+ "industrialRelevance": 0,
+ "facelessFormatLikelihood": 0,
+ "syntheticVisualStyleLikelihood": 0,
+ "aiProductionDisclosure": "explicit" | "none_found" | "unclear",
+ "narrationEvidence": "explicit_synthetic" | "explicit_human" | "unknown",
+ "recommendation": "strong_candidate" | "possible_candidate" | "unlikely_match",
+ "evidence": ["short evidence items"],
+ "limitations": ["what cannot be verified"]
+}
+Scores are 0-100. A strong_candidate requires clear industrial relevance and multiple indicators of faceless/AI-style production. Do not infer synthetic narration from a polished thumbnail. If evidence is weak, choose possible_candidate or unlikely_match. Include a limitation that narration cannot be verified from the supplied metadata/images unless the creator explicitly says so.`;
+
+function parseResult(text: string) {
+  const cleaned = text.replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/, "").trim();
+  const value = JSON.parse(cleaned);
+  const score = (n: unknown) => Math.max(0, Math.min(100, Math.round(Number(n) || 0)));
+  const disclosure = ["explicit", "none_found", "unclear"].includes(value.aiProductionDisclosure) ? value.aiProductionDisclosure : "unclear";
+  const narration = ["explicit_synthetic", "explicit_human", "unknown"].includes(value.narrationEvidence) ? value.narrationEvidence : "unknown";
+  const recommendation = ["strong_candidate", "possible_candidate", "unlikely_match"].includes(value.recommendation) ? value.recommendation : "possible_candidate";
+  return {
+    industrialRelevance: score(value.industrialRelevance),
+    facelessFormatLikelihood: score(value.facelessFormatLikelihood),
+    syntheticVisualStyleLikelihood: score(value.syntheticVisualStyleLikelihood),
+    aiProductionDisclosure: disclosure,
+    narrationEvidence: narration,
+    recommendation,
+    evidence: Array.isArray(value.evidence) ? value.evidence.filter((x: unknown) => typeof x === "string").slice(0, 8) : [],
+    limitations: Array.isArray(value.limitations) ? value.limitations.filter((x: unknown) => typeof x === "string").slice(0, 8) : [],
+  };
+}
+
+async function runGemini(prompt: string, images: ImagePart[]) {
+  const key = process.env.GEMINI_API_KEY!;
+  const model = process.env.GEMINI_MODEL || "gemini-2.5-flash-lite";
+  const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`, {
+    method: "POST", headers: { "Content-Type": "application/json", "x-goog-api-key": key },
+    body: JSON.stringify({
+      systemInstruction: { parts: [{ text: instruction }] },
+      contents: [{ role: "user", parts: [{ text: prompt }, ...images] }],
+      generationConfig: { responseMimeType: "application/json", temperature: 0.1, maxOutputTokens: 1200 },
+    }),
+    signal: AbortSignal.timeout(30000),
+  });
+  const payload = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error(payload?.error?.message || `Gemini request failed (${response.status}).`);
+  const output = payload?.candidates?.[0]?.content?.parts?.map((part: { text?: string }) => part.text ?? "").join("");
+  if (!output) throw new Error("Gemini returned an empty screening result.");
+  return parseResult(output);
+}
+
+async function runGroq(prompt: string) {
+  const key = process.env.GROQ_API_KEY!;
+  const model = process.env.GROQ_MODEL || "llama-3.3-70b-versatile";
+  const response = await fetch("https://api.groq.com/openai/v1/chat/completions", {
+    method: "POST", headers: { "Content-Type": "application/json", Authorization: `Bearer ${key}` },
+    body: JSON.stringify({
+      model, temperature: 0.1, response_format: { type: "json_object" },
+      messages: [{ role: "system", content: instruction }, { role: "user", content: prompt + "\nNo images are available in this fallback mode. Be conservative about visual-style scores." }],
+    }),
+    signal: AbortSignal.timeout(30000),
+  });
+  const payload = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error(payload?.error?.message || `Groq request failed (${response.status}).`);
+  const output = payload?.choices?.[0]?.message?.content;
+  if (!output) throw new Error("Groq returned an empty screening result.");
+  return parseResult(output);
+}
+
+export async function POST(request: NextRequest) {
+  const supabase = await createSupabaseServerClient();
+  if (!supabase) return NextResponse.json({ error: "Supabase is not configured." }, { status: 503 });
+  const { data: { user }, error: authError } = await supabase.auth.getUser();
+  if (authError || !user) return NextResponse.json({ error: "Unauthorized." }, { status: 401 });
+
+  let body: { id?: unknown };
+  try { body = await request.json(); } catch { return NextResponse.json({ error: "Request body must be valid JSON." }, { status: 400 }); }
+  if (typeof body.id !== "string" || body.id.length > 80) return NextResponse.json({ error: "A valid competitor id is required." }, { status: 400 });
+
+  const { data: competitor, error } = await supabase.from("competitors")
+    .select("id,channel_title,channel_url,description,ai_production_evidence")
+    .eq("id", body.id).eq("owner_id", user.id).maybeSingle();
+  if (error || !competitor) return NextResponse.json({ error: "Competitor not found." }, { status: 404 });
+
+  const evidence = (competitor.ai_production_evidence && typeof competitor.ai_production_evidence === "object")
+    ? competitor.ai_production_evidence as Record<string, unknown> : {};
+  const samples = (Array.isArray(evidence.sampleVideos) ? evidence.sampleVideos : []) as Sample[];
+  if (!samples.length) return NextResponse.json({ error: "No sample videos are stored for this channel. Run discovery again using targeted video keywords first." }, { status: 422 });
+
+  const prompt = [
+    `Channel: ${competitor.channel_title}`,
+    `Channel URL: ${competitor.channel_url ?? "not available"}`,
+    `Channel description: ${(competitor.description ?? "").slice(0, 2500)}`,
+    "Sample videos:",
+    ...samples.slice(0, 5).map((video, index) => `${index + 1}. Title: ${video.title ?? ""}\nDescription: ${(video.description ?? "").slice(0, 600)}\nSearch term: ${video.matchedQuery ?? ""}\nVideo URL: ${video.videoUrl ?? ""}`),
+  ].join("\n\n");
+
+  const config = getAIConfiguration();
+  if (!config.configured) return NextResponse.json({ error: "Add GEMINI_API_KEY or GROQ_API_KEY to the server environment before AI screening." }, { status: 503 });
+
+  let result: ReturnType<typeof parseResult>;
+  let provider = "";
+  let imagesUsed = 0;
+  let fallbackNote: string | null = null;
+  const images: ImagePart[] = [];
+  if (config.available.includes("gemini")) {
+    for (const sample of samples.slice(0, 3)) {
+      if (!sample.thumbnailUrl) continue;
+      const image = await getThumbnail(sample.thumbnailUrl);
+      if (image) images.push(image);
+    }
+  }
+  imagesUsed = images.length;
+
+  const preferred = config.primary;
+  try {
+    if (preferred === "gemini" && config.available.includes("gemini")) {
+      result = await runGemini(prompt, images); provider = process.env.GEMINI_MODEL || "gemini-2.5-flash-lite";
+    } else if (preferred === "groq" && config.available.includes("groq")) {
+      result = await runGroq(prompt); provider = process.env.GROQ_MODEL || "llama-3.3-70b-versatile";
+    } else if (config.available.includes("gemini")) {
+      result = await runGemini(prompt, images); provider = process.env.GEMINI_MODEL || "gemini-2.5-flash-lite";
+    } else {
+      result = await runGroq(prompt); provider = process.env.GROQ_MODEL || "llama-3.3-70b-versatile";
+    }
+  } catch (primaryError) {
+    const fallback = config.primary === "gemini" ? "groq" : "gemini";
+    if (!config.available.includes(fallback)) throw primaryError;
+    fallbackNote = primaryError instanceof Error ? primaryError.message.slice(0, 300) : "Primary provider failed.";
+    if (fallback === "groq") { result = await runGroq(prompt); provider = process.env.GROQ_MODEL || "llama-3.3-70b-versatile"; imagesUsed = 0; }
+    else { result = await runGemini(prompt, images); provider = process.env.GEMINI_MODEL || "gemini-2.5-flash-lite"; }
+  }
+
+  const aiScreening = {
+    ...result, provider, screenedAt: new Date().toISOString(), imagesAnalyzed: imagesUsed,
+    sampleVideosAnalyzed: Math.min(samples.length, 5),
+    status: "advisory_only",
+    narrationVerification: result.narrationEvidence === "unknown" ? "Not verified; no audio/transcript was supplied." : "Based on explicit public creator disclosure, not direct audio verification.",
+    fallbackNote,
+  };
+  const { data: updated, error: saveError } = await supabase.from("competitors").update({
+    ai_production_evidence: { ...evidence, aiScreening },
+  }).eq("id", competitor.id).eq("owner_id", user.id)
+    .select("id,ai_production_evidence,ai_production_status").maybeSingle();
+  if (saveError || !updated) return NextResponse.json({ error: "AI screening ran, but its result could not be saved.", details: saveError?.message }, { status: 500 });
+
+  return NextResponse.json({ screening: aiScreening, competitor: updated });
+}
