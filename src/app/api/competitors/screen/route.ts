@@ -8,6 +8,47 @@ export const dynamic = "force-dynamic";
 type Sample = { title?: string; description?: string; videoUrl?: string | null; thumbnailUrl?: string | null; matchedQuery?: string };
 type ImagePart = { inlineData: { mimeType: string; data: string } };
 
+async function fetchRecentChannelSamples(supabase: NonNullable<Awaited<ReturnType<typeof createSupabaseServerClient>>>, channelId: string): Promise<Sample[]> {
+  const apiKey = process.env.YOUTUBE_API_KEY;
+  if (!apiKey) throw new Error("YOUTUBE_API_KEY is not configured on the server.");
+  const { data: reservation, error: quotaError } = await supabase.rpc("reserve_youtube_quota", { p_bucket: "general", p_amount: 2 });
+  if (quotaError) throw new Error("YouTube quota tracker is unavailable. Run the latest quota migration.");
+  if (!reservation?.allowed) throw new Error("Your tracked YouTube general API quota is exhausted. Try again after the daily reset.");
+
+  const channelUrl = new URL("https://www.googleapis.com/youtube/v3/channels");
+  channelUrl.searchParams.set("part", "contentDetails");
+  channelUrl.searchParams.set("id", channelId);
+  channelUrl.searchParams.set("key", apiKey);
+  const channelResponse = await fetch(channelUrl, { cache: "no-store", signal: AbortSignal.timeout(15000) });
+  const channelPayload = await channelResponse.json().catch(() => ({}));
+  if (!channelResponse.ok) throw new Error(channelPayload?.error?.message || "Could not load the channel uploads playlist.");
+  const uploadsPlaylist = channelPayload?.items?.[0]?.contentDetails?.relatedPlaylists?.uploads;
+  if (!uploadsPlaylist) throw new Error("YouTube did not return an uploads playlist for this channel.");
+
+  const playlistUrl = new URL("https://www.googleapis.com/youtube/v3/playlistItems");
+  playlistUrl.searchParams.set("part", "snippet,contentDetails");
+  playlistUrl.searchParams.set("playlistId", uploadsPlaylist);
+  playlistUrl.searchParams.set("maxResults", "5");
+  playlistUrl.searchParams.set("key", apiKey);
+  const playlistResponse = await fetch(playlistUrl, { cache: "no-store", signal: AbortSignal.timeout(15000) });
+  const playlistPayload = await playlistResponse.json().catch(() => ({}));
+  if (!playlistResponse.ok) throw new Error(playlistPayload?.error?.message || "Could not load recent channel videos.");
+  return (playlistPayload?.items ?? []).map((item: any) => {
+    const videoId = item.contentDetails?.videoId ?? item.snippet?.resourceId?.videoId;
+    return {
+      videoId,
+      title: item.snippet?.title ?? "",
+      description: (item.snippet?.description ?? "").slice(0, 1200),
+      channelTitle: item.snippet?.channelTitle ?? "",
+      publishedAt: item.contentDetails?.videoPublishedAt ?? item.snippet?.publishedAt ?? null,
+      thumbnailUrl: item.snippet?.thumbnails?.medium?.url ?? item.snippet?.thumbnails?.default?.url ?? null,
+      matchedQuery: "latest channel uploads",
+      videoUrl: videoId ? `https://www.youtube.com/watch?v=${videoId}` : null,
+    };
+  }).filter((item: Sample) => Boolean(item.videoUrl));
+}
+
+
 async function getThumbnail(url: string): Promise<ImagePart | null> {
   try {
     const parsed = new URL(url);
@@ -107,14 +148,26 @@ export async function POST(request: NextRequest) {
   if (typeof body.id !== "string" || body.id.length > 80) return NextResponse.json({ error: "A valid competitor id is required." }, { status: 400 });
 
   const { data: competitor, error } = await supabase.from("competitors")
-    .select("id,channel_title,channel_url,description,ai_production_evidence")
+    .select("id,youtube_channel_id,channel_title,channel_url,description,ai_production_evidence")
     .eq("id", body.id).eq("owner_id", user.id).maybeSingle();
   if (error || !competitor) return NextResponse.json({ error: "Competitor not found." }, { status: 404 });
 
   const evidence = (competitor.ai_production_evidence && typeof competitor.ai_production_evidence === "object")
     ? competitor.ai_production_evidence as Record<string, unknown> : {};
-  const samples = (Array.isArray(evidence.sampleVideos) ? evidence.sampleVideos : []) as Sample[];
-  if (!samples.length) return NextResponse.json({ error: "No sample videos are stored for this channel. Run discovery again using targeted video keywords first." }, { status: 422 });
+  let samples = (Array.isArray(evidence.sampleVideos) ? evidence.sampleVideos : []) as Sample[];
+  if (!samples.length) {
+    try {
+      samples = await fetchRecentChannelSamples(supabase, competitor.youtube_channel_id);
+      if (!samples.length) return NextResponse.json({ error: "YouTube did not return any recent public videos for this channel. Check whether the channel has public uploads." }, { status: 422 });
+      const { error: evidenceSaveError } = await supabase.from("competitors").update({
+        ai_production_evidence: { ...evidence, sampleVideos: samples, sampleVideosRefreshedAt: new Date().toISOString(), requiresHumanVerification: true },
+      }).eq("id", competitor.id).eq("owner_id", user.id);
+      if (evidenceSaveError) return NextResponse.json({ error: "Sample videos were retrieved but could not be saved.", details: evidenceSaveError.message }, { status: 500 });
+    } catch (sampleError) {
+      const message = sampleError instanceof Error ? sampleError.message : "Could not retrieve sample videos.";
+      return NextResponse.json({ error: message }, { status: 502 });
+    }
+  }
 
   const prompt = [
     `Channel: ${competitor.channel_title}`,
