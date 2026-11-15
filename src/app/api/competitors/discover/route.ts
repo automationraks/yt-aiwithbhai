@@ -74,7 +74,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: `Provide language "hi" or "en" and between 1 and ${MAX_KEYWORDS} keywords (maximum 80 characters each).` }, { status: 400 });
   }
 
-  const { count, error: countError } = await supabase.from("competitors").select("id", { count: "exact", head: true }).eq("is_active", true);
+  const { count, error: countError } = await supabase.from("competitors").select("id", { count: "exact", head: true }).eq("owner_id", user.id).eq("is_active", true);
   if (countError) return NextResponse.json({ error: "Could not check your active competitor limit." }, { status: 500 });
   const remaining = Math.max(0, MAX_ACTIVE_COMPETITORS - (count ?? 0));
   if (remaining === 0) return NextResponse.json({ error: "You already have 100 active competitors. Deactivate one before discovering more.", activeLimit: MAX_ACTIVE_COMPETITORS }, { status: 409 });
@@ -87,11 +87,11 @@ export async function POST(request: NextRequest) {
     for (const keyword of keywords) {
       const reservation = await reserveQuota(supabase, "search");
       if (!reservation.allowed) return NextResponse.json({ error: "Daily YouTube search request limit reached.", quota: reservation }, { status: 429 });
-      const search = await youtubeGet<{ items?: Array<{ id?: { channelId?: string; videoId?: string }; snippet?: { title?: string; description?: string; channelTitle?: string; publishedAt?: string; thumbnails?: { medium?: { url?: string }; default?: { url?: string } } } }> }>("search", {
+      const search = await youtubeGet<{ items?: Array<{ id?: { videoId?: string }; snippet?: { channelId?: string; title?: string; description?: string; channelTitle?: string; publishedAt?: string; thumbnails?: { medium?: { url?: string }; default?: { url?: string } } } }> }>("search", {
         part: "snippet", type: "video", maxResults: "25", q: keyword, relevanceLanguage: language, order: "relevance", videoDuration: "medium",
       });
       for (const item of search.items ?? []) {
-        const channelId = item.id?.channelId;
+        const channelId = item.snippet?.channelId;
         if (!channelId) continue;
         channelIds.add(channelId);
         const videoId = item.id?.videoId ?? null;
@@ -160,7 +160,7 @@ export async function POST(request: NextRequest) {
     // Refresh sample-video evidence for channels that were already saved.
     // The original upsert intentionally ignores duplicates so it cannot reset
     // a user's manual qualification/rejection decision.
-    const eligibleIds = eligible.slice(0, remaining).map((channel) => channel.id);
+    const eligibleIds = eligible.map((channel) => channel.id);
     if (eligibleIds.length) {
       const { data: existingRows, error: existingError } = await supabase.from("competitors")
         .select("id,youtube_channel_id,ai_production_evidence")
