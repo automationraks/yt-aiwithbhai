@@ -20,7 +20,7 @@ const defaultKeywords = [
   "manufacturing process documentary no presenter",
   "AI narrated engineering documentary",
   "factory production process cinematic documentary",
-].join("\\n");
+].join(String.fromCharCode(10));
 function compact(value: number | string | null) {
   const number = Number(value ?? 0);
   return Number.isFinite(number) ? new Intl.NumberFormat("en", { notation: "compact", maximumFractionDigits: 1 }).format(number) : "—";
@@ -94,6 +94,7 @@ export default function CompetitorExplorerPage() {
       if (!response.ok) throw new Error(result.error || "Could not save review.");
       setCompetitors((current) => current.map((row) => row.id === item.id ? {
         ...row, ai_production_status: result.competitor.ai_production_status,
+        is_active: result.competitor.is_active,
         ai_production_review_note: result.competitor.ai_production_review_note,
       } : row));
     } catch (err) { setError(err instanceof Error ? err.message : "Could not save review."); }
