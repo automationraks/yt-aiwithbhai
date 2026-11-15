@@ -9,4 +9,4 @@ alter table public.competitors
 -- Existing channels are deliberately not treated as AI-produced.
 update public.competitors
 set ai_production_status = 'needs_review'
-where ai_production_status is null;
+where ai_production_status is null;\n\n-- Remove previously discovered, unverified channels from active tracking until reviewed.\nupdate public.competitors set is_active = false;
