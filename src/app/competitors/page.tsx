@@ -91,8 +91,16 @@ export default function CompetitorExplorerPage() {
         method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ id: item.id }),
       });
-      const result = await response.json();
-      if (!response.ok) throw new Error(result.error || "AI screening failed.");
+      const responseText = await response.text();
+      let result: any = {};
+      if (responseText.trim()) {
+        try { result = JSON.parse(responseText); }
+        catch { throw new Error(`AI screening returned an invalid response (HTTP ${response.status}): ${responseText.slice(0, 300)}`); }
+      } else {
+        throw new Error(`AI screening returned an empty response (HTTP ${response.status}). Check the terminal running npm run dev for the server error, then share that error text.`);
+      }
+      if (!response.ok) throw new Error(result.error || `AI screening failed (HTTP ${response.status}).`);
+      if (!result.screening) throw new Error("The screening API response did not contain an assessment.");
       setScreenResults((current) => ({ ...current, [item.id]: result.screening }));
       setNotice("AI screening completed for " + item.channel_title + ". Review the evidence before making a manual decision.");
     } catch (err) { setError(err instanceof Error ? err.message : "AI screening failed."); }
