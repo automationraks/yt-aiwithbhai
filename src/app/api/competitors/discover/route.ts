@@ -121,7 +121,7 @@ export async function POST(request: NextRequest) {
   }
 
   try {
-    const channelIds = new Set<string>();
+    const channelIds = new Set<string>();\n    const samplesByChannel = new Map<string, Array<{ videoId: string | null; title: string; description: string; channelTitle: string; publishedAt: string | null; thumbnailUrl: string | null; matchedQuery: string; videoUrl: string | null }>>();\n    const samplesByChannel = new Map<string, Array<{ videoId: string | null; title: string; description: string; channelTitle: string; publishedAt: string | null; thumbnailUrl: string | null; matchedQuery: string; videoUrl: string | null }>>();
     for (const keyword of keywords) {
       const reservation = await reserveQuota(supabase, "search");
       if (!reservation.allowed) {
@@ -154,7 +154,7 @@ export async function POST(request: NextRequest) {
         }, { status: 429 });
       }
       const result = await youtubeGet<{ items?: YouTubeChannel[] }>("channels", {
-        part: "snippet,statistics",
+        part: "snippet,statistics,contentDetails",
         id: batch.join(","),
         maxResults: "50",
       });
@@ -203,7 +203,7 @@ export async function POST(request: NextRequest) {
       saved,
       activeCompetitorCount: (count ?? 0) + saved,
       activeCompetitorLimit: MAX_ACTIVE_COMPETITORS,
-      ageFilter: "Channels created between 2 and 4 years ago",
+      ageFilter: "Channels created between 2 and 4 years ago",\n      qualification: "Candidates only. AI voiceover and AI-generated visuals are not verified by YouTube public metadata; review sample videos before marking qualified.",
       quotaNote: "This dashboard tracks requests made through this app only. Other apps using the same Google Cloud project also consume its quota.",
       quota: await (async () => {
         const { data } = await supabase.rpc("get_youtube_quota_status");
