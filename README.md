@@ -41,3 +41,11 @@ The public YouTube API does not prove that a channel uses AI narration or genera
 ## Setup checklist
 
 The dashboard reads live setup status for Supabase, configured AI provider keys, YouTube API key, n8n webhook credentials and saved research keywords. The starter keyword action inserts Hindi and English seed terms into `keyword_library`. n8n status currently checks credential configuration only; it does not verify that a scheduled workflow is active.
+
+## AI-assisted candidate screening
+
+Set `GEMINI_API_KEY` for Gemini multimodal screening. Optional model override: `GEMINI_MODEL` (default `gemini-2.5-flash-lite`). Groq text fallback uses `GROQ_API_KEY` and optional `GROQ_MODEL` (default `llama-3.3-70b-versatile`).
+
+In Competitor Explorer, click **AI screen** on a candidate. Gemini evaluates the supplied channel/video metadata and up to three YouTube thumbnails; Groq fallback evaluates text only. Screening scores cover industrial relevance, faceless-format likelihood and visual-style likelihood. The AI result is advisory and does not change qualification status.
+
+Important limits: thumbnails and metadata do not prove that visuals were AI-generated. Synthetic narration cannot be verified without audio or reliable creator disclosure. Review the actual videos before manually qualifying a channel. The screening endpoint only processes candidates already stored for the signed-in owner.
