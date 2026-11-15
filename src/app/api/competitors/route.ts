@@ -11,7 +11,7 @@ export async function GET() {
   if (authError || !user) return NextResponse.json({ error: "Unauthorized." }, { status: 401 });
 
   const { data, error } = await supabase.from("competitors")
-    .select("id,youtube_channel_id,channel_title,channel_url,description,published_at,country,language,subscriber_count,video_count,view_count,is_active,discovered_at,last_checked_at")
+    .select("id,youtube_channel_id,channel_title,channel_url,description,published_at,country,language,subscriber_count,video_count,view_count,is_active,discovered_at,last_checked_at,ai_production_status,ai_production_evidence,ai_production_reviewed_at,ai_production_review_note")
     .order("subscriber_count", { ascending: false, nullsFirst: false }).limit(100);
   if (error) return NextResponse.json({ error: "Unable to load competitors.", details: error.message }, { status: 500 });
   return NextResponse.json({ competitors: data ?? [], activeCount: (data ?? []).filter((item) => item.is_active).length, limit: 100 });
@@ -23,12 +23,31 @@ export async function PATCH(request: NextRequest) {
   const { data: { user }, error: authError } = await supabase.auth.getUser();
   if (authError || !user) return NextResponse.json({ error: "Unauthorized." }, { status: 401 });
 
-  let body: { id?: unknown; is_active?: unknown };
+  let body: { id?: unknown; is_active?: unknown; ai_production_status?: unknown; ai_production_review_note?: unknown };
   try { body = await request.json(); } catch {
     return NextResponse.json({ error: "Request body must be valid JSON." }, { status: 400 });
   }
-  if (typeof body.id !== "string" || typeof body.is_active !== "boolean") {
-    return NextResponse.json({ error: "A competitor id and boolean is_active value are required." }, { status: 400 });
+  if (typeof body.id !== "string") {
+    return NextResponse.json({ error: "A competitor id is required." }, { status: 400 });
+  }
+
+  if (typeof body.ai_production_status === "string") {
+    if (!["qualified", "rejected", "needs_review"].includes(body.ai_production_status)) {
+      return NextResponse.json({ error: "Invalid AI-production review status." }, { status: 400 });
+    }
+    const note = typeof body.ai_production_review_note === "string" ? body.ai_production_review_note.slice(0, 1000) : null;
+    const { data, error } = await supabase.from("competitors").update({
+      ai_production_status: body.ai_production_status,
+      ai_production_reviewed_at: new Date().toISOString(),
+      ai_production_review_note: note,
+    }).eq("id", body.id).select("id,ai_production_status,ai_production_reviewed_at,ai_production_review_note").maybeSingle();
+    if (error) return NextResponse.json({ error: "Could not save AI-production review.", details: error.message }, { status: 500 });
+    if (!data) return NextResponse.json({ error: "Competitor not found." }, { status: 404 });
+    return NextResponse.json({ competitor: data });
+  }
+
+  if (typeof body.is_active !== "boolean") {
+    return NextResponse.json({ error: "Provide is_active or an AI-production review status." }, { status: 400 });
   }
 
   if (body.is_active) {
@@ -44,4 +63,3 @@ export async function PATCH(request: NextRequest) {
   if (error) return NextResponse.json({ error: "Could not update competitor.", details: error.message }, { status: 500 });
   if (!data) return NextResponse.json({ error: "Competitor not found." }, { status: 404 });
   return NextResponse.json({ competitor: data });
-}
