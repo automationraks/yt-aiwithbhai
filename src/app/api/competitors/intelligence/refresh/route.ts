@@ -157,7 +157,7 @@ export async function POST() {
       videoSnapshotsSaved: snapshots.length,
       competitorSnapshotsSaved: channelSnapshots.length,
       batchSize: BATCH_SIZE,
-      remainingActiveCompetitors: Math.max(0, (await supabase.from("competitors").select("id", { count: "exact", head: true }).eq("is_active", true).eq("ai_production_status", "qualified")).count ?? 0) - updates.filter(Boolean).length,
+      remainingActiveCompetitors: Math.max(0, ((await supabase.from("competitors").select("id", { count: "exact", head: true }).eq("is_active", true).eq("ai_production_status", "qualified")).count ?? 0) - updates.filter(Boolean).length),
       message: "Competitor statistics, latest uploads and historical snapshots have been refreshed.",
     });
   } catch (err) {
