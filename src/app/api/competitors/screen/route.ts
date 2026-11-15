@@ -220,8 +220,17 @@ export async function POST(request: NextRequest) {
     narrationVerification: result.narrationEvidence === "unknown" ? "Not verified; no audio/transcript was supplied." : "Based on explicit public creator disclosure, not direct audio verification.",
     fallbackNote,
   };
+  // Preserve any samples fetched earlier in this same request. The initial
+  // evidence object is stale when the channel had no saved samples.
+  const latestEvidence = {
+    ...evidence,
+    sampleVideos: samples,
+    sampleVideosRefreshedAt: evidence.sampleVideosRefreshedAt ?? new Date().toISOString(),
+    requiresHumanVerification: true,
+    aiScreening,
+  };
   const { data: updated, error: saveError } = await supabase.from("competitors").update({
-    ai_production_evidence: { ...evidence, aiScreening },
+    ai_production_evidence: latestEvidence,
   }).eq("id", competitor.id).eq("owner_id", user.id)
     .select("id,ai_production_evidence,ai_production_status").maybeSingle();
   if (saveError || !updated) return NextResponse.json({ error: "AI screening ran, but its result could not be saved.", details: saveError?.message }, { status: 500 });
