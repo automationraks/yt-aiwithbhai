@@ -1,0 +1,115 @@
+"use client";
+
+import { useCallback, useEffect, useMemo, useState } from "react";
+import Link from "next/link";
+import { ArrowLeft, ExternalLink, Loader2, Search, Target, Users, RefreshCw, Power, AlertCircle } from "lucide-react";
+
+type Competitor = {
+  id: string; youtube_channel_id: string; channel_title: string; channel_url: string | null;
+  published_at: string | null; country: string | null; language: string | null;
+  subscriber_count: number | string | null; video_count: number | string | null;
+  view_count: number | string | null; is_active: boolean;
+};
+
+const defaultKeywords = "industrial manufacturing\nfactory automation\nengineering technology\nmanufacturing process";
+function compact(value: number | string | null) {
+  const number = Number(value ?? 0);
+  return Number.isFinite(number) ? new Intl.NumberFormat("en", { notation: "compact", maximumFractionDigits: 1 }).format(number) : "—";
+}
+function dateLabel(value: string | null) {
+  return value ? new Date(value).toLocaleDateString("en-IN", { month: "short", year: "numeric" }) : "Unknown";
+}
+
+export default function CompetitorExplorerPage() {
+  const [competitors, setCompetitors] = useState<Competitor[]>([]);
+  const [language, setLanguage] = useState<"hi" | "en">("hi");
+  const [keywords, setKeywords] = useState(defaultKeywords);
+  const [filter, setFilter] = useState<"all" | "active" | "paused">("all");
+  const [search, setSearch] = useState("");
+  const [loading, setLoading] = useState(true);
+  const [discovering, setDiscovering] = useState(false);
+  const [updatingId, setUpdatingId] = useState<string | null>(null);
+  const [error, setError] = useState("");
+  const [notice, setNotice] = useState("");
+  const [lastDiscovery, setLastDiscovery] = useState<any>(null);
+
+  const loadCompetitors = useCallback(async () => {
+    setLoading(true); setError("");
+    try {
+      const response = await fetch("/api/competitors", { cache: "no-store" });
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.error || "Could not load competitors.");
+      setCompetitors(result.competitors ?? []);
+    } catch (err) { setError(err instanceof Error ? err.message : "Could not load competitors."); }
+    finally { setLoading(false); }
+  }, []);
+  useEffect(() => { void loadCompetitors(); }, [loadCompetitors]);
+
+  const activeCount = competitors.filter((item) => item.is_active).length;
+  const visible = useMemo(() => competitors.filter((item) => {
+    const matchesFilter = filter === "all" || (filter === "active" ? item.is_active : !item.is_active);
+    const term = search.trim().toLowerCase();
+    return matchesFilter && (!term || item.channel_title.toLowerCase().includes(term) || item.youtube_channel_id.toLowerCase().includes(term));
+  }), [competitors, filter, search]);
+
+  async function discover() {
+    const keywordList = Array.from(new Set(keywords.split(/[\n,]/).map((item) => item.trim()).filter(Boolean)));
+    if (!keywordList.length) { setError("Enter at least one keyword."); return; }
+    if (keywordList.length > 5) { setError("Use no more than five keywords per discovery run."); return; }
+    setDiscovering(true); setError(""); setNotice(""); setLastDiscovery(null);
+    try {
+      const response = await fetch("/api/competitors/discover", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ language, keywords: keywordList }),
+      });
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.error || "Discovery failed.");
+      setLastDiscovery(result);
+      setNotice("Discovery complete: " + result.saved + " new competitors added from " + result.channelsDiscovered + " channels found.");
+      await loadCompetitors();
+    } catch (err) { setError(err instanceof Error ? err.message : "Discovery failed."); }
+    finally { setDiscovering(false); }
+  }
+
+  async function toggleCompetitor(item: Competitor) {
+    setUpdatingId(item.id); setError(""); setNotice("");
+    try {
+      const response = await fetch("/api/competitors", {
+        method: "PATCH", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id: item.id, is_active: !item.is_active }),
+      });
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.error || "Could not update competitor.");
+      setCompetitors((current) => current.map((row) => row.id === item.id ? { ...row, is_active: result.competitor.is_active } : row));
+    } catch (err) { setError(err instanceof Error ? err.message : "Could not update competitor."); }
+    finally { setUpdatingId(null); }
+  }
+
+  return <main className="min-h-screen bg-[#090d14] text-slate-100"><div className="mx-auto max-w-[1440px] p-4 md:p-8">
+    <div className="mb-6 flex flex-wrap items-center justify-between gap-3"><div><Link href="/" className="mb-3 inline-flex items-center gap-2 text-xs text-slate-400 hover:text-white"><ArrowLeft size={14}/>Dashboard</Link><div className="flex items-center gap-3"><div className="rounded-xl bg-amber-500/10 p-3 text-amber-300"><Target size={22}/></div><div><h1 className="text-2xl font-semibold">Competitor Explorer</h1><p className="mt-1 text-sm text-slate-400">Discover and manage industrial YouTube channels created 2–4 years ago.</p></div></div></div><button onClick={() => void loadCompetitors()} disabled={loading} className="inline-flex items-center gap-2 rounded-lg border border-slate-700 px-3 py-2 text-xs text-slate-300 hover:bg-white/5 disabled:opacity-50"><RefreshCw size={14} className={loading ? "animate-spin" : ""}/>Refresh list</button></div>
+
+    <div className="mb-6 grid gap-3 sm:grid-cols-3">
+      <div className="rounded-xl border border-slate-800 bg-[#111925] p-4"><div className="text-xs text-slate-400">Active competitors</div><div className="mt-2 text-2xl font-semibold">{activeCount}<span className="ml-1 text-sm font-normal text-slate-500">/ 100</span></div></div>
+      <div className="rounded-xl border border-slate-800 bg-[#111925] p-4"><div className="text-xs text-slate-400">Saved channels</div><div className="mt-2 text-2xl font-semibold">{competitors.length}</div></div>
+      <div className="rounded-xl border border-slate-800 bg-[#111925] p-4"><div className="text-xs text-slate-400">Available active slots</div><div className="mt-2 text-2xl font-semibold">{Math.max(0,100-activeCount)}</div></div>
+    </div>
+
+    <section className="mb-6 rounded-xl border border-slate-800 bg-[#111925] p-5">
+      <div className="mb-4 flex flex-wrap items-center justify-between gap-2"><div><h2 className="text-sm font-semibold">Discover competitors</h2><p className="mt-1 text-xs text-slate-400">Each keyword uses one YouTube search request. Maximum five keywords per run.</p></div><span className="rounded-md border border-amber-500/20 bg-amber-500/10 px-2 py-1 text-[10px] text-amber-300">2–4 year channel filter</span></div>
+      <div className="grid gap-4 lg:grid-cols-[1fr_2fr]">
+        <div><label className="mb-2 block text-xs text-slate-400">Search relevance language</label><select value={language} onChange={(event)=>setLanguage(event.target.value as "hi"|"en")} className="w-full rounded-lg border border-slate-700 bg-[#0b121d] px-3 py-2.5 text-sm outline-none focus:border-amber-500"><option value="hi">Hindi</option><option value="en">English</option></select><p className="mt-2 text-[10px] leading-4 text-slate-500">This affects YouTube search relevance. It does not verify the channel's actual spoken language.</p></div>
+        <div><label className="mb-2 block text-xs text-slate-400">Keywords (one per line or comma-separated)</label><textarea value={keywords} onChange={(event)=>setKeywords(event.target.value)} rows={4} className="w-full resize-y rounded-lg border border-slate-700 bg-[#0b121d] px-3 py-2.5 text-sm outline-none focus:border-amber-500" placeholder={"industrial manufacturing\nfactory automation"}/></div>
+      </div>
+      <div className="mt-4 flex flex-wrap items-center justify-between gap-3"><p className="text-[11px] text-slate-500">Results are ranked by subscriber count. Only channels passing the creation-date filter are saved.</p><button onClick={() => void discover()} disabled={discovering || activeCount>=100} className="inline-flex items-center gap-2 rounded-lg bg-amber-500 px-4 py-2.5 text-sm font-semibold text-slate-950 hover:bg-amber-400 disabled:cursor-not-allowed disabled:opacity-50">{discovering?<Loader2 size={16} className="animate-spin"/>:<Search size={16}/>} {discovering?"Discovering...":"Discover channels"}</button></div>
+    </section>
+
+    {error && <div className="mb-4 flex items-start gap-2 rounded-lg border border-red-500/30 bg-red-500/10 p-3 text-sm text-red-300"><AlertCircle size={16} className="mt-0.5 shrink-0"/><span>{error}</span></div>}
+    {notice && <div className="mb-4 rounded-lg border border-emerald-500/20 bg-emerald-500/10 p-3 text-sm text-emerald-300">{notice}{lastDiscovery?.quota && <div className="mt-1 text-xs text-emerald-200/70">Search quota remaining: {lastDiscovery.quota.search.remaining} · General units remaining: {lastDiscovery.quota.general.remaining}</div>}</div>}
+
+    <section className="overflow-hidden rounded-xl border border-slate-800 bg-[#111925]">
+      <div className="flex flex-col justify-between gap-3 border-b border-slate-800 p-4 md:flex-row md:items-center"><div><h2 className="text-sm font-semibold">Tracked channels</h2><p className="mt-1 text-xs text-slate-400">Pause channels to free active slots without deleting their records.</p></div><div className="flex flex-wrap gap-2"><div className="relative"><Search size={14} className="absolute left-3 top-2.5 text-slate-500"/><input value={search} onChange={(event)=>setSearch(event.target.value)} placeholder="Find channel..." className="w-full rounded-lg border border-slate-700 bg-[#0b121d] py-2 pl-8 pr-3 text-xs outline-none focus:border-amber-500 sm:w-52"/></div><select value={filter} onChange={(event)=>setFilter(event.target.value as typeof filter)} className="rounded-lg border border-slate-700 bg-[#0b121d] px-3 py-2 text-xs"><option value="all">All channels</option><option value="active">Active</option><option value="paused">Paused</option></select></div></div>
+      {loading ? <div className="p-12 text-center text-sm text-slate-400"><Loader2 size={18} className="mx-auto mb-2 animate-spin"/>Loading channels...</div> : visible.length===0 ? <div className="p-12 text-center"><Users size={24} className="mx-auto mb-3 text-slate-600"/><p className="text-sm font-medium">{competitors.length===0?"No competitors saved yet":"No channels match these filters"}</p><p className="mt-1 text-xs text-slate-500">Run competitor discovery above to find relevant channels.</p></div> : <div className="overflow-x-auto"><table className="w-full min-w-[760px] text-left"><thead className="bg-[#0d1520] text-[10px] uppercase tracking-wider text-slate-500"><tr><th className="px-4 py-3">Channel</th><th className="px-4 py-3">Subscribers</th><th className="px-4 py-3">Videos</th><th className="px-4 py-3">Total views</th><th className="px-4 py-3">Created</th><th className="px-4 py-3">Status</th><th className="px-4 py-3">Actions</th></tr></thead><tbody className="divide-y divide-slate-800">{visible.map((item)=><tr key={item.id} className="hover:bg-white/[.02]"><td className="max-w-[320px] px-4 py-3"><div className="truncate text-sm font-medium">{item.channel_title}</div><div className="mt-1 truncate text-[10px] text-slate-500">{item.youtube_channel_id}{item.country?" · "+item.country:""} · {item.language?.toUpperCase()||"—"}</div></td><td className="px-4 py-3 text-xs tabular-nums">{compact(item.subscriber_count)}</td><td className="px-4 py-3 text-xs tabular-nums">{compact(item.video_count)}</td><td className="px-4 py-3 text-xs tabular-nums">{compact(item.view_count)}</td><td className="px-4 py-3 text-xs text-slate-400">{dateLabel(item.published_at)}</td><td className="px-4 py-3"><span className={"rounded-full px-2 py-1 text-[10px] "+(item.is_active?"bg-emerald-500/10 text-emerald-300":"bg-slate-700 text-slate-400")}>{item.is_active?"Active":"Paused"}</span></td><td className="px-4 py-3"><div className="flex items-center gap-2">{item.channel_url&&<a href={item.channel_url} target="_blank" rel="noreferrer" title="Open YouTube channel" className="rounded-md border border-slate-700 p-2 text-slate-400 hover:text-white"><ExternalLink size={14}/></a>}<button onClick={()=>void toggleCompetitor(item)} disabled={updatingId===item.id} title={item.is_active?"Pause tracking":"Resume tracking"} className="rounded-md border border-slate-700 p-2 text-slate-400 hover:text-amber-300 disabled:opacity-50">{updatingId===item.id?<Loader2 size={14} className="animate-spin"/>:<Power size={14}/>}</button></div></td></tr>)}</tbody></table></div>}
+    </section>
+    <p className="mt-4 text-[10px] leading-5 text-slate-500">YouTube search relevance language is not confirmed channel-language classification. Public subscriber counts may be hidden or rounded. Paused channels remain stored and can be reactivated.</p>
+  </div></main>;
+}
