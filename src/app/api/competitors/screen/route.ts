@@ -121,7 +121,7 @@ async function runGemini(prompt: string, images: ImagePart[]) {
 
 async function runGroq(prompt: string) {
   const key = process.env.GROQ_API_KEY!;
-  const model = process.env.GROQ_MODEL || "llama-3.3-70b-versatile";
+  const model = process.env.GROQ_MODEL || "openai/gpt-oss-120b";
   const response = await fetch("https://api.groq.com/openai/v1/chat/completions", {
     method: "POST", headers: { "Content-Type": "application/json", Authorization: `Bearer ${key}` },
     body: JSON.stringify({
@@ -199,17 +199,17 @@ export async function POST(request: NextRequest) {
     if (preferred === "gemini" && config.available.includes("gemini")) {
       result = await runGemini(prompt, images); provider = process.env.GEMINI_MODEL || "gemini-2.5-flash-lite";
     } else if (preferred === "groq" && config.available.includes("groq")) {
-      result = await runGroq(prompt); provider = process.env.GROQ_MODEL || "llama-3.3-70b-versatile";
+      result = await runGroq(prompt); provider = process.env.GROQ_MODEL || "openai/gpt-oss-120b";
     } else if (config.available.includes("gemini")) {
       result = await runGemini(prompt, images); provider = process.env.GEMINI_MODEL || "gemini-2.5-flash-lite";
     } else {
-      result = await runGroq(prompt); provider = process.env.GROQ_MODEL || "llama-3.3-70b-versatile";
+      result = await runGroq(prompt); provider = process.env.GROQ_MODEL || "openai/gpt-oss-120b";
     }
   } catch (primaryError) {
     const fallback = config.primary === "gemini" ? "groq" : "gemini";
     if (!config.available.includes(fallback)) throw primaryError;
     fallbackNote = primaryError instanceof Error ? primaryError.message.slice(0, 300) : "Primary provider failed.";
-    if (fallback === "groq") { result = await runGroq(prompt); provider = process.env.GROQ_MODEL || "llama-3.3-70b-versatile"; imagesUsed = 0; }
+    if (fallback === "groq") { result = await runGroq(prompt); provider = process.env.GROQ_MODEL || "openai/gpt-oss-120b"; imagesUsed = 0; }
     else { result = await runGemini(prompt, images); provider = process.env.GEMINI_MODEL || "gemini-2.5-flash-lite"; }
   }
 
