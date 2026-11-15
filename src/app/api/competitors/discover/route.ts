@@ -8,6 +8,15 @@ const YOUTUBE_API = "https://www.googleapis.com/youtube/v3";
 const MAX_ACTIVE_COMPETITORS = 100;
 const MAX_KEYWORDS = 5;
 
+type QuotaReservation = { allowed: boolean; bucket: string; used: number; limit: number; remaining: number; resetAt: string; quotaDate: string };
+
+async function reserveQuota(supabase: Awaited<ReturnType<typeof createSupabaseServerClient>>, bucket: "search" | "general") {
+  if (!supabase) throw new Error("Supabase is not configured.");
+  const { data, error } = await supabase.rpc("reserve_youtube_quota", { p_bucket: bucket, p_amount: 1 });
+  if (error) throw new Error(`Quota tracker unavailable. Run the latest Supabase SQL migration. ${error.message}`);
+  return data as QuotaReservation;
+}
+
 type YouTubeChannel = {
   id: string;
   snippet?: {
@@ -114,6 +123,13 @@ export async function POST(request: NextRequest) {
   try {
     const channelIds = new Set<string>();
     for (const keyword of keywords) {
+      const reservation = await reserveQuota(supabase, "search");
+      if (!reservation.allowed) {
+        return NextResponse.json({
+          error: "Daily YouTube search request limit reached. Remaining searches are blocked until the quota resets.",
+          quota: reservation,
+        }, { status: 429 });
+      }
       const search = await youtubeGet<{ items?: Array<{ id?: { channelId?: string } }> }>("search", {
         part: "snippet",
         type: "channel",
@@ -130,6 +146,13 @@ export async function POST(request: NextRequest) {
     const channels: YouTubeChannel[] = [];
     for (let index = 0; index < ids.length; index += 50) {
       const batch = ids.slice(index, index + 50);
+      const reservation = await reserveQuota(supabase, "general");
+      if (!reservation.allowed) {
+        return NextResponse.json({
+          error: "Daily YouTube general API quota limit reached. Channel details were not requested.",
+          quota: reservation,
+        }, { status: 429 });
+      }
       const result = await youtubeGet<{ items?: YouTubeChannel[] }>("channels", {
         part: "snippet,statistics",
         id: batch.join(","),
@@ -181,7 +204,11 @@ export async function POST(request: NextRequest) {
       activeCompetitorCount: (count ?? 0) + saved,
       activeCompetitorLimit: MAX_ACTIVE_COMPETITORS,
       ageFilter: "Channels created between 2 and 4 years ago",
-      quotaNote: "Each keyword uses one YouTube search request; channel details are fetched in batches.",
+      quotaNote: "This dashboard tracks requests made through this app only. Other apps using the same Google Cloud project also consume its quota.",
+      quota: await (async () => {
+        const { data } = await supabase.rpc("get_youtube_quota_status");
+        return data ?? null;
+      })(),
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Unexpected YouTube discovery error.";
