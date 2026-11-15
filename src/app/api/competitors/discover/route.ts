@@ -160,7 +160,7 @@ export async function POST(request: NextRequest) {
     const { data: quota } = await supabase.rpc("get_youtube_quota_status");
     return NextResponse.json({
       searchedKeywords: keywords, language, channelsDiscovered: channelIds.size,
-      channelsWithinAgeRange: eligible.length, saved, activeCompetitorCount: (count ?? 0) + saved,
+      channelsWithinAgeRange: eligible.length, saved, candidatesSaved: saved, activeCompetitorCount: count ?? 0,
       activeCompetitorLimit: MAX_ACTIVE_COMPETITORS, ageFilter: "Channels created between 2 and 4 years ago",
       qualification: "Candidates only. Public YouTube metadata cannot verify AI voiceovers or AI-generated visuals. Review the sample videos before marking a channel as AI-produced.",
       quotaNote: "This dashboard tracks requests made through this app only. Other apps using the same Google Cloud project also consume its quota.",
