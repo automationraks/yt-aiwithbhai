@@ -63,3 +63,4 @@ export async function PATCH(request: NextRequest) {
   if (error) return NextResponse.json({ error: "Could not update competitor.", details: error.message }, { status: 500 });
   if (!data) return NextResponse.json({ error: "Competitor not found." }, { status: 404 });
   return NextResponse.json({ competitor: data });
+}
