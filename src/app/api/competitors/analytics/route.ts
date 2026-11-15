@@ -10,7 +10,7 @@ export async function GET() {
   if (authError || !user) return NextResponse.json({ error: "Unauthorized." }, { status: 401 });
 
   const { data: competitors, error } = await supabase.from("competitors")
-    .select("id,channel_title,channel_url,subscriber_count,video_count,view_count,last_checked_at,ai_production_status")
+    .select("id,channel_title,channel_url,subscriber_count,video_count,view_count,last_checked_at,ai_production_status,ai_production_evidence")
     .eq("owner_id", user.id).eq("is_active", true).eq("ai_production_status", "qualified")
     .order("subscriber_count", { ascending: false }).limit(100);
   if (error) return NextResponse.json({ error: "Could not load competitor metrics.", details: error.message }, { status: 500 });
@@ -31,7 +31,7 @@ export async function GET() {
   const analytics = competitors.map((competitor) => {
     const history = historyById.get(competitor.id) ?? [];
     const recent = history[0];
-    const previous = history.find((item) => recent && new Date(item.captured_at).getTime() - new Date(item.captured_at).getTime() >= 0 && new Date(recent.captured_at).getTime() - new Date(item.captured_at).getTime() >= 6 * 86400000);
+    const previous = history.find((item) => recent && new Date(recent.captured_at).getTime() - new Date(item.captured_at).getTime() >= 6 * 86400000);
     const currentSubs = Number(competitor.subscriber_count ?? 0);
     const previousSubs = Number(previous?.subscriber_count ?? currentSubs);
     const subscriberDelta = currentSubs - previousSubs;
@@ -41,14 +41,29 @@ export async function GET() {
     const intervals = dated.slice(0, 8).slice(1).map((time,index)=>(dated[index]-time)/86400000);
     const uploadIntervalDays = intervals.length ? intervals.reduce((a,b)=>a+b,0)/intervals.length : null;
     const averageViews = videos.length ? Math.round(videos.reduce((sum,video)=>sum+Number(video.view_count??0),0)/videos.length) : 0;
-    const score = Math.max(0,Math.min(100,
+    const evidence = competitor.ai_production_evidence && typeof competitor.ai_production_evidence === "object"
+      ? competitor.ai_production_evidence as Record<string, any> : {};
+    const ai = evidence.aiScreening && typeof evidence.aiScreening === "object" ? evidence.aiScreening : {};
+    const visual = Math.max(0, Math.min(100, Number(ai.syntheticVisualStyleLikelihood) || 0));
+    const faceless = Math.max(0, Math.min(100, Number(ai.facelessFormatLikelihood) || 0));
+    const relevance = Math.max(0, Math.min(100, Number(ai.industrialRelevance) || 0));
+    const narration = ai.narrationEvidence === "explicit_synthetic" ? 100 : ai.narrationEvidence === "explicit_human" ? 0 : 35;
+    const consistency = uploadIntervalDays === null ? 0 : Math.max(0, Math.min(100, 100 - Math.max(0, uploadIntervalDays - 7) * 4));
+    const growth = growthPercent === null ? 0 : Math.max(0, Math.min(100, 50 + growthPercent * 5));
+    const aiProductionScore = Math.round(visual * .30 + faceless * .20 + narration * .20 + relevance * .15 + consistency * .10 + growth * .05);
+    const score = Math.round(Math.max(0,Math.min(100,
       (growthPercent === null ? 0 : Math.max(0,Math.min(35,growthPercent*5))) +
       (averageViews > 0 ? Math.min(30,Math.log10(averageViews+1)*5) : 0) +
       (uploadIntervalDays === null ? 0 : Math.max(0,25-Math.max(0,uploadIntervalDays-7)*1.5)) +
       (videos.length >= 5 ? 10 : videos.length*2)
-    ));
+    )));
+    const topVideos = videos.slice().sort((a,b)=>Number(b.view_count??0)-Number(a.view_count??0)).slice(0,3)
+      .map(video=>({title:video.title,views:Number(video.view_count??0),publishedAt:video.published_at,isShort:video.is_short}));
     return {
       id: competitor.id, title: competitor.channel_title, url: competitor.channel_url,
+      aiProductionScore, aiScoreBreakdown: {visual,faceless,narration,relevance,consistency,growth},
+      aiRecommendation: ai.recommendation ?? "not_screened",
+      topVideos,
       subscribers: currentSubs, totalViews: Number(competitor.view_count ?? 0),
       subscriberDelta, growthPercent: growthPercent === null ? null : Number(growthPercent.toFixed(2)),
       snapshotCount: history.length, lastSnapshotAt: recent?.captured_at ?? null,
@@ -66,7 +81,8 @@ export async function GET() {
       declining: analytics.filter((item)=>item.trend==="declining").length,
       totalSubscribers: analytics.reduce((sum,item)=>sum+item.subscribers,0),
       videosSampled: analytics.reduce((sum,item)=>sum+item.sampledVideos,0),
+      averageAIProductionScore: analytics.length ? Math.round(analytics.reduce((sum,item)=>sum+item.aiProductionScore,0)/analytics.length) : 0,
     },
-    methodology: "Momentum is a heuristic from subscriber change between snapshots, sampled public video views and recent upload spacing. It is not YouTube Analytics, watch time, revenue, CTR or guaranteed future growth. At least two snapshots separated by six days are needed for a meaningful growth comparison.",
+    methodology: "AI-production score is a weighted research heuristic (visual 30%, faceless 20%, narration evidence 20%, industrial relevance 15%, consistency 10%, growth 5%); unknown narration receives a conservative partial score and is not verified. Momentum is a separate heuristic from subscriber change between snapshots, sampled public video views and recent upload spacing. It is not YouTube Analytics, watch time, revenue, CTR or guaranteed future growth. At least two snapshots separated by six days are needed for a meaningful growth comparison.",
   });
 }
