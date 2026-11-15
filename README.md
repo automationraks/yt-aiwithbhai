@@ -35,7 +35,7 @@ The public YouTube API does not prove that a channel uses AI narration or genera
 - `POST /api/competitors/intelligence/refresh` refreshes up to 10 active, qualified channels per request.
 - The refresh fetches channel statistics and up to five latest uploads per channel, stores video metadata and historical channel/video snapshots.
 - `GET /api/competitors/analytics` calculates public-metric growth comparisons, sample-video views, upload spacing and a heuristic momentum score.
-- Open `/competitor-analytics` to inspect the ranking and run another refresh batch.
+- Open `/competitor-analytics` to inspect the ranking and run another refresh batch. The page also shows a weighted AI-production research score: visual-style likelihood 30%, faceless likelihood 20%, narration evidence 20%, industrial relevance 15%, upload consistency 10%, and public growth 5%. This is a heuristic for prioritization, not proof that a channel uses AI.
 - Growth comparisons require snapshots at least six days apart. Competitor watch time, CTR, revenue and retention are not available through the public Data API.
 
 ## Setup checklist
@@ -44,8 +44,17 @@ The dashboard reads live setup status for Supabase, configured AI provider keys,
 
 ## AI-assisted candidate screening
 
-Set `GEMINI_API_KEY` for Gemini multimodal screening. Optional model override: `GEMINI_MODEL` (default `gemini-2.5-flash-lite`). Groq text fallback uses `GROQ_API_KEY` and optional `GROQ_MODEL` (default `llama-3.3-70b-versatile`).
+Set `GEMINI_API_KEY` for Gemini multimodal screening. Optional model override: `GEMINI_MODEL` (default `gemini-2.5-flash-lite`). Groq text fallback uses `GROQ_API_KEY` and optional `GROQ_MODEL` (default `openai/gpt-oss-120b`).
 
 In Competitor Explorer, click **AI screen** on a candidate. Gemini evaluates the supplied channel/video metadata and up to three YouTube thumbnails; Groq fallback evaluates text only. Screening scores cover industrial relevance, faceless-format likelihood and visual-style likelihood. The AI result is advisory and does not change qualification status.
 
 Important limits: thumbnails and metadata do not prove that visuals were AI-generated. Synthetic narration cannot be verified without audio or reliable creator disclosure. Review the actual videos before manually qualifying a channel. The screening endpoint only processes candidates already stored for the signed-in owner.
+
+
+## Code validation
+
+GitHub Actions runs `npm ci`, `npm run typecheck`, `npm run lint` and `npm run build` on pushes and pull requests to `main`. Check the Actions tab for the result before deploying.
+
+## Automation boundary
+
+The dashboard endpoints support manual refresh and reporting inputs. A recurring weekly schedule and alerts require an active n8n Cloud workflow with a configured webhook and secret. Adding credentials to the app does not create or activate that workflow; configure the schedule and connect the webhook in n8n before treating monitoring as automated.
