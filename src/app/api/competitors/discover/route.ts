@@ -157,10 +157,37 @@ export async function POST(request: NextRequest) {
       saved = data?.length ?? 0;
     }
 
+    // Refresh sample-video evidence for channels that were already saved.
+    // The original upsert intentionally ignores duplicates so it cannot reset
+    // a user's manual qualification/rejection decision.
+    const eligibleIds = eligible.slice(0, remaining).map((channel) => channel.id);
+    if (eligibleIds.length) {
+      const { data: existingRows, error: existingError } = await supabase.from("competitors")
+        .select("id,youtube_channel_id,ai_production_evidence")
+        .eq("owner_id", user.id).in("youtube_channel_id", eligibleIds);
+      if (existingError) return NextResponse.json({ error: "Channels were discovered, but sample-video evidence could not be refreshed.", details: existingError.message }, { status: 500 });
+      for (const row of existingRows ?? []) {
+        const newSamples = samplesByChannel.get(row.youtube_channel_id) ?? [];
+        if (!newSamples.length) continue;
+        const oldEvidence = row.ai_production_evidence && typeof row.ai_production_evidence === "object"
+          ? row.ai_production_evidence as Record<string, unknown> : {};
+        const mergedEvidence = {
+          ...oldEvidence,
+          sampleVideos: newSamples,
+          sampleVideosRefreshedAt: new Date().toISOString(),
+          requiresHumanVerification: true,
+        };
+        const { error: evidenceError } = await supabase.from("competitors")
+          .update({ ai_production_evidence: mergedEvidence })
+          .eq("id", row.id).eq("owner_id", user.id);
+        if (evidenceError) return NextResponse.json({ error: "Could not update sample-video evidence for an existing channel.", details: evidenceError.message }, { status: 500 });
+      }
+    }
+
     const { data: quota } = await supabase.rpc("get_youtube_quota_status");
     return NextResponse.json({
       searchedKeywords: keywords, language, channelsDiscovered: channelIds.size,
-      channelsWithinAgeRange: eligible.length, saved, candidatesSaved: saved, activeCompetitorCount: count ?? 0,
+      channelsWithinAgeRange: eligible.length, saved, candidatesSaved: saved, sampleEvidenceRefreshed: eligible.slice(0, remaining).filter((channel) => (samplesByChannel.get(channel.id)?.length ?? 0) > 0).length, activeCompetitorCount: count ?? 0,
       activeCompetitorLimit: MAX_ACTIVE_COMPETITORS, ageFilter: "Channels created between 2 and 4 years ago",
       qualification: "Candidates only. Public YouTube metadata cannot verify AI voiceovers or AI-generated visuals. Review the sample videos before marking a channel as AI-produced.",
       quotaNote: "This dashboard tracks requests made through this app only. Other apps using the same Google Cloud project also consume its quota.",
