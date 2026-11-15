@@ -138,7 +138,7 @@ export async function POST(request: NextRequest) {
       subscriber_count: channel.statistics?.subscriberCount ?? null,
       video_count: channel.statistics?.videoCount ?? null,
       view_count: channel.statistics?.viewCount ?? null,
-      is_active: true,
+      is_active: false,
       ai_production_status: "needs_review",
       ai_production_evidence: {
         reviewStatus: "unverified",
