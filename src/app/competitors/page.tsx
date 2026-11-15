@@ -9,9 +9,16 @@ type Competitor = {
   published_at: string | null; country: string | null; language: string | null;
   subscriber_count: number | string | null; video_count: number | string | null;
   view_count: number | string | null; is_active: boolean;
+  ai_production_status: "needs_review" | "qualified" | "rejected";
+  ai_production_evidence: { sampleVideos?: Array<{ title: string; videoUrl: string | null; thumbnailUrl: string | null; matchedQuery: string }> } | null;
+  ai_production_review_note: string | null;
 };
 
-const defaultKeywords = "industrial manufacturing\nfactory automation\nengineering technology\nmanufacturing process";
+const defaultKeywords = "faceless factory documentary AI voiceover
+AI generated industrial process animation
+manufacturing process documentary no presenter
+AI narrated engineering documentary
+factory production process cinematic documentary";
 function compact(value: number | string | null) {
   const number = Number(value ?? 0);
   return Number.isFinite(number) ? new Intl.NumberFormat("en", { notation: "compact", maximumFractionDigits: 1 }).format(number) : "—";
