@@ -23,3 +23,21 @@ The discovery endpoint reserves one search request per keyword and one general q
 ## Local development
 
 Install dependencies with `npm install`, copy `.env.example` to `.env.local`, fill in the required server-side credentials, and run `npm run dev`.
+
+## AI-production competitor review
+
+Run `supabase/migrations/20261115_ai_channel_qualification.sql` in the Supabase SQL Editor. Existing competitor rows are moved to `needs_review` and paused. New discovery results are stored as inactive review candidates. Only manually qualified channels become active competitors.
+
+The public YouTube API does not prove that a channel uses AI narration or generated visuals. Review multiple sample videos before qualifying a channel.
+
+## Competitor intelligence
+
+- `POST /api/competitors/intelligence/refresh` refreshes up to 10 active, qualified channels per request.
+- The refresh fetches channel statistics and up to five latest uploads per channel, stores video metadata and historical channel/video snapshots.
+- `GET /api/competitors/analytics` calculates public-metric growth comparisons, sample-video views, upload spacing and a heuristic momentum score.
+- Open `/competitor-analytics` to inspect the ranking and run another refresh batch.
+- Growth comparisons require snapshots at least six days apart. Competitor watch time, CTR, revenue and retention are not available through the public Data API.
+
+## Setup checklist
+
+The dashboard reads live setup status for Supabase, configured AI provider keys, YouTube API key, n8n webhook credentials and saved research keywords. The starter keyword action inserts Hindi and English seed terms into `keyword_library`. n8n status currently checks credential configuration only; it does not verify that a scheduled workflow is active.
