@@ -1,0 +1,47 @@
+import { NextRequest, NextResponse } from "next/server";
+import { createSupabaseServerClient } from "@/lib/supabase/server";
+
+export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
+
+export async function GET() {
+  const supabase = await createSupabaseServerClient();
+  if (!supabase) return NextResponse.json({ error: "Supabase is not configured." }, { status: 503 });
+  const { data: { user }, error: authError } = await supabase.auth.getUser();
+  if (authError || !user) return NextResponse.json({ error: "Unauthorized." }, { status: 401 });
+
+  const { data, error } = await supabase.from("competitors")
+    .select("id,youtube_channel_id,channel_title,channel_url,description,published_at,country,language,subscriber_count,video_count,view_count,is_active,discovered_at,last_checked_at")
+    .order("subscriber_count", { ascending: false, nullsFirst: false }).limit(100);
+  if (error) return NextResponse.json({ error: "Unable to load competitors.", details: error.message }, { status: 500 });
+  return NextResponse.json({ competitors: data ?? [], activeCount: (data ?? []).filter((item) => item.is_active).length, limit: 100 });
+}
+
+export async function PATCH(request: NextRequest) {
+  const supabase = await createSupabaseServerClient();
+  if (!supabase) return NextResponse.json({ error: "Supabase is not configured." }, { status: 503 });
+  const { data: { user }, error: authError } = await supabase.auth.getUser();
+  if (authError || !user) return NextResponse.json({ error: "Unauthorized." }, { status: 401 });
+
+  let body: { id?: unknown; is_active?: unknown };
+  try { body = await request.json(); } catch {
+    return NextResponse.json({ error: "Request body must be valid JSON." }, { status: 400 });
+  }
+  if (typeof body.id !== "string" || typeof body.is_active !== "boolean") {
+    return NextResponse.json({ error: "A competitor id and boolean is_active value are required." }, { status: 400 });
+  }
+
+  if (body.is_active) {
+    const { count, error: countError } = await supabase.from("competitors").select("id", { count: "exact", head: true }).eq("is_active", true);
+    if (countError) return NextResponse.json({ error: "Could not verify active competitor limit." }, { status: 500 });
+    const { data: current, error: currentError } = await supabase.from("competitors").select("is_active").eq("id", body.id).maybeSingle();
+    if (currentError || !current) return NextResponse.json({ error: "Competitor not found." }, { status: 404 });
+    if (!current.is_active && (count ?? 0) >= 100) return NextResponse.json({ error: "You have reached the 100 active competitor limit." }, { status: 409 });
+  }
+
+  const { data, error } = await supabase.from("competitors").update({ is_active: body.is_active })
+    .eq("id", body.id).select("id,is_active").maybeSingle();
+  if (error) return NextResponse.json({ error: "Could not update competitor.", details: error.message }, { status: 500 });
+  if (!data) return NextResponse.json({ error: "Competitor not found." }, { status: 404 });
+  return NextResponse.json({ competitor: data });
+}
