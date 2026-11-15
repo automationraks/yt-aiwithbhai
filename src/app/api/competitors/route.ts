@@ -35,12 +35,22 @@ export async function PATCH(request: NextRequest) {
     if (!["qualified", "rejected", "needs_review"].includes(body.ai_production_status)) {
       return NextResponse.json({ error: "Invalid AI-production review status." }, { status: 400 });
     }
+    const { data: current, error: currentError } = await supabase.from("competitors")
+      .select("is_active").eq("id", body.id).maybeSingle();
+    if (currentError || !current) return NextResponse.json({ error: "Competitor not found." }, { status: 404 });
+    if (body.ai_production_status === "qualified" && !current.is_active) {
+      const { count, error: countError } = await supabase.from("competitors")
+        .select("id", { count: "exact", head: true }).eq("is_active", true);
+      if (countError) return NextResponse.json({ error: "Could not verify active competitor limit." }, { status: 500 });
+      if ((count ?? 0) >= 100) return NextResponse.json({ error: "100 active competitor slots are already in use. Pause one before qualifying another channel." }, { status: 409 });
+    }
     const note = typeof body.ai_production_review_note === "string" ? body.ai_production_review_note.slice(0, 1000) : null;
     const { data, error } = await supabase.from("competitors").update({
       ai_production_status: body.ai_production_status,
       ai_production_reviewed_at: new Date().toISOString(),
       ai_production_review_note: note,
-    }).eq("id", body.id).select("id,ai_production_status,ai_production_reviewed_at,ai_production_review_note").maybeSingle();
+      is_active: body.ai_production_status === "qualified",
+    }).eq("id", body.id).select("id,is_active,ai_production_status,ai_production_reviewed_at,ai_production_review_note").maybeSingle();
     if (error) return NextResponse.json({ error: "Could not save AI-production review.", details: error.message }, { status: 500 });
     if (!data) return NextResponse.json({ error: "Competitor not found." }, { status: 404 });
     return NextResponse.json({ competitor: data });
