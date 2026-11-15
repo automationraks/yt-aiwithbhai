@@ -1,0 +1,3 @@
+import { z } from "zod";
+const schema=z.enum(["gemini","groq"]);export type AIProvider=z.infer<typeof schema>;
+export function getAIConfiguration(){const parsed=schema.safeParse(process.env.AI_PRIMARY_PROVIDER??"gemini");const primary:AIProvider=parsed.success?parsed.data:"gemini";const configured={gemini:Boolean(process.env.GEMINI_API_KEY),groq:Boolean(process.env.GROQ_API_KEY)};const fallback:AIProvider=primary==="gemini"?"groq":"gemini";const available=(["gemini","groq"] as const).filter(p=>configured[p]);return{primary,available,fallback:configured[fallback]?fallback:null,configured:available.length>0}}
