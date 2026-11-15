@@ -47,7 +47,7 @@ export async function POST() {
 
   const { data: competitors, error } = await supabase.from("competitors")
     .select("id,youtube_channel_id,channel_title")
-    .eq("is_active", true).eq("ai_production_status", "qualified")
+    .eq("owner_id", user.id).eq("is_active", true).eq("ai_production_status", "qualified")
     .order("last_checked_at", { ascending: true, nullsFirst: true }).limit(BATCH_SIZE);
   if (error) return NextResponse.json({ error: "Could not load qualified competitors.", details: error.message }, { status: 500 });
   if (!competitors?.length) return NextResponse.json({ processed: 0, message: "No active, qualified competitors are waiting for refresh." });
@@ -146,7 +146,7 @@ export async function POST() {
         video_count: stats.videoCount ?? null,
         view_count: stats.viewCount ?? null,
         last_checked_at: now,
-      }).eq("id", competitor.id);
+      }).eq("id", competitor.id).eq("owner_id", user.id);
       if (updateError) throw new Error(`Updating ${competitor.channel_title} failed: ${updateError.message}`);
       return competitor.id;
     }));
@@ -157,7 +157,7 @@ export async function POST() {
       videoSnapshotsSaved: snapshots.length,
       competitorSnapshotsSaved: channelSnapshots.length,
       batchSize: BATCH_SIZE,
-      remainingActiveCompetitors: Math.max(0, ((await supabase.from("competitors").select("id", { count: "exact", head: true }).eq("is_active", true).eq("ai_production_status", "qualified")).count ?? 0) - updates.filter(Boolean).length),
+      remainingActiveCompetitors: Math.max(0, ((await supabase.from("competitors").select("id", { count: "exact", head: true }).eq("owner_id", user.id).eq("is_active", true).eq("ai_production_status", "qualified")).count ?? 0) - updates.filter(Boolean).length),
       message: "Competitor statistics, latest uploads and historical snapshots have been refreshed.",
     });
   } catch (err) {
