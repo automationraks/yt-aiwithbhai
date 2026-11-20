@@ -90,7 +90,7 @@ export default function CompetitorExplorerPage() {
   const loadCompetitors = useCallback(async () => {
     setLoading(true); setError("");
     try {
-      const response = await fetch("/api/competitors", { cache: "no-store" });
+      const response = await fetch("/api/competitors/refresh", { method: "POST", cache: "no-store" });
       const result = await response.json();
       if (!response.ok) throw new Error(result.error || "Could not load competitors.");
       const rows: Competitor[] = result.competitors ?? [];
@@ -136,7 +136,7 @@ export default function CompetitorExplorerPage() {
       const result = await response.json();
       if (!response.ok) throw new Error(result.error || "Discovery failed.");
       setLastDiscovery(result);
-      setNotice("Discovery complete: " + result.saved + " new review candidates added from " + result.channelsDiscovered + " channels found.");
+      setNotice("Discovery complete: " + result.saved + " channel records upserted from " + result.channelsDiscovered + " channels found. " + (result.channelsFilteredByAI ?? 0) + " filtered by AI; " + (result.channelsPendingScreening ?? 0) + " pending screening. Existing user decisions were preserved.");
       await loadCompetitors();
     } catch (err) { setError(err instanceof Error ? err.message : "Discovery failed."); }
     finally { setDiscovering(false); }
