@@ -4,9 +4,9 @@ create table if not exists public.channel_profile (
  id uuid primary key default gen_random_uuid(),
  owner_id uuid not null references auth.users(id) on delete cascade unique,
  channel_id text,
- channel_name text not null default 'Industrial Hub',
- language text not null default 'hi',
- niche text not null default 'Industrial manufacturing and engineering',
+ channel_name text not null default 'AIWithBh@i',
+ language text not null default 'en',
+ niche text not null default 'AI Systems Architecture and Engineering Education for IT Professionals',
  created_at timestamptz not null default now(),
  updated_at timestamptz not null default now()
 );
