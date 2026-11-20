@@ -18,21 +18,21 @@ type Story = {
 
 function clean(value: string) {
   return value
-    .replace(/<!\\[CDATA\\[([\\s\\S]*?)\\]\\]>/g, "$1")
+    .replace(/<!\[CDATA\[([\s\S]*?)\]\]>/g, "$1")
     .replace(/<[^>]*>/g, " ")
     .replace(/&amp;/g, "&")
     .replace(/&lt;/g, "<")
     .replace(/&gt;/g, ">")
     .replace(/&quot;/g, '"')
     .replace(/&#39;/g, "'")
-    .replace(/\\s+/g, " ")
+    .replace(/\s+/g, " ")
     .trim();
 }
 
 function value(block: string, tags: string[]) {
   for (const tag of tags) {
     const match = block.match(
-      new RegExp("<" + tag + "(?:\\\\s[^>]*)?>([\\\\s\\\\S]*?)<\\\\/" + tag + ">", "i"),
+      new RegExp("<" + tag + "(?:\\s[^>]*)?>([\\s\\S]*?)</" + tag + ">", "i"),
     );
     if (match) return clean(match[1]);
   }
@@ -41,7 +41,7 @@ function value(block: string, tags: string[]) {
 
 function parse(xml: string, source: (typeof AI_NEWS_SOURCES)[number]): Story[] {
   const blocks =
-    xml.match(/<(?:item|entry)(?:\\s[^>]*)?>[\\s\\S]*?<\\/(?:item|entry)>/gi) ?? [];
+    xml.match(/<(?:item|entry)(?:\s[^>]*)?>[\s\S]*?<\/(?:item|entry)>/gi) ?? [];
 
   return blocks.flatMap((block, index): Story[] => {
     const title = value(block, ["title"]);
@@ -54,7 +54,7 @@ function parse(xml: string, source: (typeof AI_NEWS_SOURCES)[number]): Story[] {
         ? new Date(rawDate).toISOString()
         : null;
 
-    if (!title || !/^https?:\\/\\//i.test(link)) return [];
+    if (!title || !/^https?:\/\//i.test(link)) return [];
 
     return [{
       id: source.id + ":" + (publishedAt || index) + ":" + title.slice(0, 28),
