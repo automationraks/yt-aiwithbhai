@@ -11,7 +11,7 @@ export const AI_NEWS_SOURCES: AINewsSource[] = [
   { id: "openai", name: "OpenAI", category: "Frontier models", feedUrl: "https://openai.com/news/rss.xml", homepage: "https://openai.com/news/", priority: "core" },
   { id: "anthropic", name: "Anthropic", category: "Frontier models", feedUrl: "https://www.anthropic.com/news/rss.xml", homepage: "https://www.anthropic.com/news", priority: "core" },
   { id: "google-deepmind", name: "Google DeepMind", category: "Frontier models", feedUrl: "https://deepmind.google/blog/rss.xml", homepage: "https://deepmind.google/discover/blog/", priority: "core" },
-  { id: "google-ai", name: "Google AI", category: "Frontier models", feedUrl: "https://blog.google/technology/ai/rss/", homepage: "https://blog.google/technology/ai/", priority: "core" },
+  { id: "google-ai", name: "Google AI · Gemini", category: "Frontier models", feedUrl: "https://blog.google/technology/ai/rss/", homepage: "https://deepmind.google/technologies/gemini/", priority: "core" },
   { id: "meta-ai", name: "Meta AI", category: "Frontier models", feedUrl: "https://about.fb.com/news/category/technology/feed/", homepage: "https://ai.meta.com/blog/", priority: "core" },
   { id: "xai", name: "xAI · Grok", category: "Frontier models", feedUrl: "https://x.ai/news", homepage: "https://x.ai/news", priority: "core" },
   { id: "moonshot-kimi", name: "Moonshot AI · Kimi", category: "Frontier models", feedUrl: "https://www.kimi.com/en/blog/", homepage: "https://www.kimi.com/en/blog/", priority: "core" },
@@ -54,7 +54,6 @@ export const AI_NEWS_SOURCES: AINewsSource[] = [
   { id: "arxiv-ml", name: "arXiv · Machine Learning", category: "Research", feedUrl: "https://rss.arxiv.org/rss/cs.LG", homepage: "https://arxiv.org/list/cs.LG/recent", priority: "core" },
   { id: "arxiv-cl", name: "arXiv · NLP", category: "Research", feedUrl: "https://rss.arxiv.org/rss/cs.CL", homepage: "https://arxiv.org/list/cs.CL/recent", priority: "core" },
   { id: "arxiv-robotics", name: "arXiv · Robotics", category: "Research", feedUrl: "https://rss.arxiv.org/rss/cs.RO", homepage: "https://arxiv.org/list/cs.RO/recent", priority: "community" },
-  { id: "jev", name: "Jev · Model intelligence tracker", category: "Model ecosystems", feedUrl: "https://jevmodel.ai/models/", homepage: "https://jevmodel.ai/models/", priority: "community" },
 ];
 
 export const AI_NEWS_CATEGORIES = ["All", "Frontier models", "AI hardware", "Cloud AI", "Open source", "Developer tools", "Research", "Model ecosystems"] as const;
