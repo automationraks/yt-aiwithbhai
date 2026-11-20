@@ -20,6 +20,20 @@ const defaultKeywords = [
   "RAG architecture vector databases tutorial",
   "AI agent architecture orchestration",
   "production AI systems engineering",
+  "Anthropic Claude AI engineering architecture",
+  "Meta AI research Llama engineering",
+  "Groq LPU inference AI infrastructure",
+  "OpenAI developer engineering AI systems",
+  "DeepSeek model architecture engineering",
+  "AWS production AI machine learning architecture",
+  "Databricks generative AI engineering",
+  "Snowflake Cortex AI engineering",
+  "NVIDIA AI infrastructure inference systems",
+  "Palantir AIP enterprise AI case studies",
+  "CrowdStrike AI cybersecurity engineering",
+  "Apple machine learning AI research",
+  "Google DeepMind Gemini AI engineering",
+  "Tesla AI autonomy engineering",
 ].join(String.fromCharCode(10));
 function compact(value: number | string | null) {
   const number = Number(value ?? 0);
@@ -142,7 +156,7 @@ export default function CompetitorExplorerPage() {
   }
 
   return <main className="min-h-screen bg-[#090d14] text-slate-100"><div className="mx-auto max-w-[1440px] p-4 md:p-8">
-    <div className="mb-6 flex flex-wrap items-center justify-between gap-3"><div><Link href="/" className="mb-3 inline-flex items-center gap-2 text-xs text-slate-400 hover:text-white"><ArrowLeft size={14}/>Dashboard</Link><div className="flex items-center gap-3"><div className="rounded-xl bg-cyan-500/10 p-3 text-cyan-300"><Target size={22}/></div><div><h1 className="text-2xl font-semibold">Competitor Explorer</h1><p className="mt-1 text-sm text-slate-400">Find AI systems and engineering educators, then manually verify AI systems education niche.</p></div></div></div><button onClick={() => void loadCompetitors()} disabled={loading} className="inline-flex items-center gap-2 rounded-lg border border-slate-700 px-3 py-2 text-xs text-slate-300 hover:bg-white/5 disabled:opacity-50"><RefreshCw size={14} className={loading ? "animate-spin" : ""}/>Refresh list</button></div>
+    <div className="mb-6 flex flex-wrap items-center justify-between gap-3"><div><Link href="/" className="mb-3 inline-flex items-center gap-2 text-xs text-slate-400 hover:text-white"><ArrowLeft size={14}/>Dashboard</Link><div className="flex items-center gap-3"><div className="rounded-xl bg-cyan-500/10 p-3 text-cyan-300"><Target size={22}/></div><div><h1 className="text-2xl font-semibold">Competitor Explorer</h1><p className="mt-1 text-sm text-slate-400">Find AI systems educators and official technology sources. Only high-confidence AI systems matches are saved.</p></div></div></div><button onClick={() => void loadCompetitors()} disabled={loading} className="inline-flex items-center gap-2 rounded-lg border border-slate-700 px-3 py-2 text-xs text-slate-300 hover:bg-white/5 disabled:opacity-50"><RefreshCw size={14} className={loading ? "animate-spin" : ""}/>Refresh list</button></div>
 
     <div className="mb-6 grid gap-3 sm:grid-cols-3">
       <div className="rounded-xl border border-slate-800 bg-[#111925] p-4"><div className="text-xs text-slate-400">Active competitors</div><div className="mt-2 text-2xl font-semibold">{activeCount}<span className="ml-1 text-sm font-normal text-slate-500">/ 100</span></div></div>
@@ -151,12 +165,12 @@ export default function CompetitorExplorerPage() {
     </div>
 
     <section className="mb-6 rounded-xl border border-slate-800 bg-[#111925] p-5">
-      <div className="mb-4 flex flex-wrap items-center justify-between gap-2"><div><h2 className="text-sm font-semibold">Discover competitors</h2><p className="mt-1 text-xs text-slate-400">Searches video titles and descriptions using every keyword you provide. Each keyword uses one YouTube search request; the daily API quota still applies.</p></div><span className="rounded-md border border-cyan-500/20 bg-cyan-500/10 px-2 py-1 text-[10px] text-cyan-300">Global creator discovery</span></div>
+      <div className="mb-4 flex flex-wrap items-center justify-between gap-2"><div><h2 className="text-sm font-semibold">Discover competitors</h2><p className="mt-1 text-xs text-slate-400">Searches video titles and descriptions using every keyword you provide. AI screens channel candidates and saves only strong matches scoring above 80 for confidence and niche relevance.</p></div><span className="rounded-md border border-cyan-500/20 bg-cyan-500/10 px-2 py-1 text-[10px] text-cyan-300">Global creator discovery</span></div>
       <div className="grid gap-4 lg:grid-cols-[1fr_2fr]">
         <div><label className="mb-2 block text-xs text-slate-400">Search relevance language</label><select value={language} onChange={(event)=>setLanguage(event.target.value as "hi"|"en")} className="w-full rounded-lg border border-slate-700 bg-[#0b121d] px-3 py-2.5 text-sm outline-none focus:border-cyan-500"><option value="hi">Hindi</option><option value="en">English</option></select><p className="mt-2 text-[10px] leading-4 text-slate-500">This affects YouTube search relevance. It does not verify the channel's actual spoken language.</p></div>
         <div><label className="mb-2 block text-xs text-slate-400">Keywords (one per line or comma-separated)</label><textarea value={keywords} onChange={(event)=>setKeywords(event.target.value)} rows={4} className="w-full resize-y rounded-lg border border-slate-700 bg-[#0b121d] px-3 py-2.5 text-sm outline-none focus:border-cyan-500" placeholder={"AI system design\nRAG architecture and LLM engineering"}/></div>
       </div>
-      <div className="mt-4 flex flex-wrap items-center justify-between gap-3"><p className="max-w-2xl text-[11px] text-slate-500">Candidates are not confirmed AI channels. Public metadata cannot prove AI voiceovers or generated visuals; inspect the sample videos before approving.</p><button onClick={() => void discover()} disabled={discovering || activeCount>=100} className="inline-flex items-center gap-2 rounded-lg bg-cyan-500 px-4 py-2.5 text-sm font-semibold text-slate-950 hover:bg-cyan-400 disabled:cursor-not-allowed disabled:opacity-50">{discovering?<Loader2 size={16} className="animate-spin"/>:<Search size={16}/>} {discovering?"Discovering...":"Discover creators"}</button></div>
+      <div className="mt-4 flex flex-wrap items-center justify-between gap-3"><p className="max-w-2xl text-[11px] text-slate-500">Automatic screening saves only strong niche matches scoring above 80 for both confidence and relevance. AI-generated narration and visuals still require human verification.</p><button onClick={() => void discover()} disabled={discovering || activeCount>=100} className="inline-flex items-center gap-2 rounded-lg bg-cyan-500 px-4 py-2.5 text-sm font-semibold text-slate-950 hover:bg-cyan-400 disabled:cursor-not-allowed disabled:opacity-50">{discovering?<Loader2 size={16} className="animate-spin"/>:<Search size={16}/>} {discovering?"Discovering...":"Discover creators"}</button></div>
     </section>
 
     {error && <div className="mb-4 flex items-start gap-2 rounded-lg border border-red-500/30 bg-red-500/10 p-3 text-sm text-red-300"><AlertCircle size={16} className="mt-0.5 shrink-0"/><span>{error}</span></div>}
