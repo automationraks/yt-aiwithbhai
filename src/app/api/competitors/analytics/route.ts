@@ -47,7 +47,6 @@ export async function GET() {
     const visual = Math.max(0, Math.min(100, Number(ai.syntheticVisualStyleLikelihood) || 0));
     const faceless = Math.max(0, Math.min(100, Number(ai.facelessFormatLikelihood) || 0));
     const relevance = Math.max(0, Math.min(100, Number(ai.industrialRelevance) || 0));
-    const narration = 0;
     const consistency = uploadIntervalDays === null ? 0 : Math.max(0, Math.min(100, 100 - Math.max(0, uploadIntervalDays - 7) * 4));
     const growth = growthPercent === null ? 0 : Math.max(0, Math.min(100, 50 + growthPercent * 5));
     const aiProductionScore = Math.round(relevance * .50 + visual * .15 + faceless * .10 + consistency * .15 + growth * .10);
