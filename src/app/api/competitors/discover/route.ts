@@ -78,7 +78,8 @@ async function screenDiscoveryChannels(channels: YouTubeChannel[], samples: Map<
     matchedQuery:v.matchedQuery.slice(0,100)
    }))
   })).join("\n");
-  const learningContext = rejectedExamples.length ? "\n\nUSER-REJECTED EXAMPLES FROM PREVIOUS REVIEWS (learn the exclusion patterns):\n" + JSON.stringify(rejectedExamples) + "\nUse these as negative examples. Identify recurring traits that explain why they do not fit AI tools/technology coverage or practical AI system design education. Apply those traits to new candidates only when supported by evidence. Do not reject a candidate merely because it shares a company, tool, or broad topic; judge actual content. Exact previously rejected channel IDs are excluded before screening." : "";\n  const prompt="Assess these "+chunk.length+" channels using only the compact public metadata below. Return every supplied channelId exactly once. Keep each reason under 35 words and evidence to at most 2 short items. Be consistent with the prior user rejection examples when relevant.\n"+content+learningContext;
+  const learningContext = rejectedExamples.length ? "\n\nUSER-REJECTED EXAMPLES FROM PREVIOUS REVIEWS (learn the exclusion patterns):\n" + JSON.stringify(rejectedExamples) + "\nUse these as negative examples. Identify recurring traits that explain why they do not fit AI tools/technology coverage or practical AI system design education. Apply those traits to new candidates only when supported by evidence. Do not reject a candidate merely because it shares a company, tool, or broad topic; judge actual content. Exact previously rejected channel IDs are excluded before screening." : "";
+  const prompt="Assess these "+chunk.length+" channels using only the compact public metadata below. Return every supplied channelId exactly once. Keep each reason under 35 words and evidence to at most 2 short items. Be consistent with the prior user rejection examples when relevant.\n"+content+learningContext;
   let result:{assessments:Map<string,Assessment>;provider:string};
   try {
    if(config.primary==="groq"&&config.available.includes("groq")) result=await callGroq(prompt,ids);
@@ -282,7 +283,9 @@ export async function POST(request: NextRequest) {
     const { data: quota } = await supabase.rpc("get_youtube_quota_status");
     return NextResponse.json({
       searchedKeywords: keywords, language, channelsDiscovered: channelIds.size,
-      channelsAIassessed: assessments.size,\n      priorRejectedExamplesUsed: rejectedExamples.length,\n      previouslyRejectedChannelsSkipped: rejectedIds.size,
+      channelsAIassessed: assessments.size,
+      priorRejectedExamplesUsed: rejectedExamples.length,
+      previouslyRejectedChannelsSkipped: rejectedIds.size,
       channelsPassingConfidenceThreshold: eligible.length,
       minimumConfidenceScore: MIN_DISCOVERY_SCORE,
       minimumNicheRelevance: MIN_DISCOVERY_SCORE,

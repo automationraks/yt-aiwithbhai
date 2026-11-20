@@ -106,7 +106,12 @@ export default function CompetitorExplorerPage() {
         );
       });
       setCompetitors(visibleRows);
-      setScreenResults(Object.fromEntries(visibleRows.filter((item) => item.ai_production_evidence?.aiScreening).map((item) => [item.id, item.ai_production_evidence?.aiScreening])));
+      const screenings: Record<string, AIScreening> = {};
+      for (const item of visibleRows) {
+        const screening = item.ai_production_evidence?.aiScreening;
+        if (screening) screenings[item.id] = screening;
+      }
+      setScreenResults(screenings);
     } catch (err) { setError(err instanceof Error ? err.message : "Could not load competitors."); }
     finally { setLoading(false); }
   }, []);
