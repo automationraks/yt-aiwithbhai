@@ -3,7 +3,21 @@ import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { generateResearchJson } from "@/lib/ai/research";
 export const runtime="nodejs";export const dynamic="force-dynamic";
 const system="You are a YouTube content strategist and senior AI systems engineer for AIWithBh@i. Audience: software engineers, architects and IT professionals. Focus on practical AI system design, LLM architecture, RAG, agents, model serving, production reliability, security, evaluation and enterprise use cases across retail, healthcare, airlines, banking, finance and logistics. Return JSON only: {ideas:[{title,hook,industry,topic,format,language,audience,problem,architectureAngle,outline:[...],differentiation,whyNow,opportunityScore,sourceVideoIds:[...]}]}. Generate 6-10 original ideas, each citing at least one supplied shortlisted-channel video id. Use only supplied IDs. Never invent reference links or facts. Do not copy competitor titles; create distinct angles. Prefer case-study-first scenario explainers with architecture diagrams and trade-offs. Avoid generic news and shallow listicles. Score niche fit, usefulness, evidence quality, freshness and differentiation. Long videos by default, a few standalone Shorts if useful.";
-export async function GET(){const s=await createSupabaseServerClient();if(!s)return NextResponse.json({error:"Supabase is not configured."},{status:503});const {data:{user},error:a}=await s.auth.getUser();if(a||!user)return NextResponse.json({error:"Unauthorized."},{status:401});const {data,error}=await s.from("content_ideas").select("*").eq("owner_id",user.id).order("created_at",{ascending:false}).limit(60);if(error)return NextResponse.json({error:"Could not load content opportunities.",details:error.message},{status:500});return NextResponse.json({ideas:data??[]});}
+export async function GET(){
+ const s=await createSupabaseServerClient();if(!s)return NextResponse.json({error:"Supabase is not configured."},{status:503});
+ const {data:{user},error:a}=await s.auth.getUser();if(a||!user)return NextResponse.json({error:"Unauthorized."},{status:401});
+ const {data:channels,error:ce}=await s.from("competitors").select("id").eq("owner_id",user.id).eq("is_active",true).eq("ai_production_status","qualified");
+ if(ce)return NextResponse.json({error:"Could not load active shortlisted channels.",details:ce.message},{status:500});
+ const channelIds=(channels??[]).map(x=>x.id);
+ if(!channelIds.length)return NextResponse.json({ideas:[],activeSourceVideos:0});
+ const {data:videos,error:ve}=await s.from("videos").select("youtube_video_id").eq("owner_id",user.id).eq("is_niche_relevant",true).in("competitor_id",channelIds);
+ if(ve)return NextResponse.json({error:"Could not verify active niche-matched source videos.",details:ve.message},{status:500});
+ const activeVideoIds=new Set((videos??[]).map(x=>x.youtube_video_id));
+ const {data,error}=await s.from("content_ideas").select("*").eq("owner_id",user.id).order("created_at",{ascending:false}).limit(100);
+ if(error)return NextResponse.json({error:"Could not load content opportunities.",details:error.message},{status:500});
+ const ideas=(data??[]).filter(idea=>Array.isArray(idea.source_video_ids)&&idea.source_video_ids.some((id:string)=>activeVideoIds.has(id))).slice(0,60);
+ return NextResponse.json({ideas,activeSourceVideos:activeVideoIds.size});
+}
 export async function POST(){
  const s=await createSupabaseServerClient();if(!s)return NextResponse.json({error:"Supabase is not configured."},{status:503});const {data:{user},error:a}=await s.auth.getUser();if(a||!user)return NextResponse.json({error:"Unauthorized."},{status:401});
  const {data:channels,error:ce}=await s.from("competitors").select("id,channel_title,channel_url").eq("owner_id",user.id).eq("is_active",true).eq("ai_production_status","qualified").limit(100);if(ce)return NextResponse.json({error:"Could not load shortlisted channels.",details:ce.message},{status:500});const ids=(channels??[]).map(x=>x.id);if(!ids.length)return NextResponse.json({error:"No active qualified channels are shortlisted. Qualify channels in Creator Explorer first."},{status:409});
