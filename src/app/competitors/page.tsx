@@ -68,7 +68,6 @@ export default function CompetitorExplorerPage() {
   async function discover() {
     const keywordList = Array.from(new Set(keywords.split(/[\n,]/).map((item) => item.trim()).filter(Boolean)));
     if (!keywordList.length) { setError("Enter at least one keyword."); return; }
-    if (keywordList.length > 5) { setError("Use no more than five keywords per discovery run."); return; }
     setDiscovering(true); setError(""); setNotice(""); setLastDiscovery(null);
     try {
       const response = await fetch("/api/competitors/discover", {
@@ -152,7 +151,7 @@ export default function CompetitorExplorerPage() {
     </div>
 
     <section className="mb-6 rounded-xl border border-slate-800 bg-[#111925] p-5">
-      <div className="mb-4 flex flex-wrap items-center justify-between gap-2"><div><h2 className="text-sm font-semibold">Discover competitors</h2><p className="mt-1 text-xs text-slate-400">Searches video titles and descriptions for AI architecture, LLM engineering, RAG, agents and production AI systems. Maximum five searches per run.</p></div><span className="rounded-md border border-cyan-500/20 bg-cyan-500/10 px-2 py-1 text-[10px] text-cyan-300">Global creator discovery</span></div>
+      <div className="mb-4 flex flex-wrap items-center justify-between gap-2"><div><h2 className="text-sm font-semibold">Discover competitors</h2><p className="mt-1 text-xs text-slate-400">Searches video titles and descriptions using every keyword you provide. Each keyword uses one YouTube search request; the daily API quota still applies.</p></div><span className="rounded-md border border-cyan-500/20 bg-cyan-500/10 px-2 py-1 text-[10px] text-cyan-300">Global creator discovery</span></div>
       <div className="grid gap-4 lg:grid-cols-[1fr_2fr]">
         <div><label className="mb-2 block text-xs text-slate-400">Search relevance language</label><select value={language} onChange={(event)=>setLanguage(event.target.value as "hi"|"en")} className="w-full rounded-lg border border-slate-700 bg-[#0b121d] px-3 py-2.5 text-sm outline-none focus:border-cyan-500"><option value="hi">Hindi</option><option value="en">English</option></select><p className="mt-2 text-[10px] leading-4 text-slate-500">This affects YouTube search relevance. It does not verify the channel's actual spoken language.</p></div>
         <div><label className="mb-2 block text-xs text-slate-400">Keywords (one per line or comma-separated)</label><textarea value={keywords} onChange={(event)=>setKeywords(event.target.value)} rows={4} className="w-full resize-y rounded-lg border border-slate-700 bg-[#0b121d] px-3 py-2.5 text-sm outline-none focus:border-cyan-500" placeholder={"AI system design\nRAG architecture and LLM engineering"}/></div>
