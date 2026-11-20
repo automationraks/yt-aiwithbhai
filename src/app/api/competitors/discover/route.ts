@@ -140,7 +140,6 @@ export async function POST(request: NextRequest) {
   const { count, error: countError } = await supabase.from("competitors").select("id", { count: "exact", head: true }).eq("owner_id", user.id).eq("is_active", true);
   if (countError) return NextResponse.json({ error: "Could not check your active competitor limit." }, { status: 500 });
   const remaining = Math.max(0, MAX_ACTIVE_COMPETITORS - (count ?? 0));
-  if (remaining === 0) return NextResponse.json({ error: "You already have 100 active competitors. Deactivate one before discovering more.", activeLimit: MAX_ACTIVE_COMPETITORS }, { status: 409 });
 
   try {
     const samplesByChannel = new Map<string, SampleVideo[]>();
@@ -214,70 +213,52 @@ export async function POST(request: NextRequest) {
       return Boolean(assessment && assessment.confidenceScore >= MIN_DISCOVERY_SCORE && assessment.nicheRelevance >= MIN_DISCOVERY_SCORE && assessment.recommendation === "strong_candidate");
     });
 
-    const rows = eligible.slice(0, remaining).map((channel) => {
-      const assessment = assessments.get(channel.id)!;
-      return ({
-      owner_id: user.id,
-      youtube_channel_id: channel.id,
-      channel_title: channel.snippet?.title ?? "Untitled channel",
-      channel_url: channel.snippet?.customUrl ? `https://www.youtube.com/@${channel.snippet.customUrl.replace(/^@/, "")}` : `https://www.youtube.com/channel/${channel.id}`,
-      description: channel.snippet?.description ?? null,
-      published_at: channel.snippet?.publishedAt ?? null,
-      country: channel.snippet?.country ?? null,
-      language,
-      subscriber_count: channel.statistics?.subscriberCount ?? null,
-      video_count: channel.statistics?.videoCount ?? null,
-      view_count: channel.statistics?.viewCount ?? null,
-      is_active: false,
-      ai_production_status: "needs_review",
-      ai_production_evidence: {
-        reviewStatus: "ai_screened_high_confidence",
-        explanation: assessment.reason,
-        confidenceScore: assessment.confidenceScore,
-        nicheRelevance: assessment.nicheRelevance,
-        recommendation: assessment.recommendation,
-        evidence: assessment.evidence,
-        screeningProvider,
-        screenedAt: new Date().toISOString(),
-        sampleVideos: samplesByChannel.get(channel.id) ?? [],
+    const discoveredIds = candidates.map((channel) => channel.id);
+    const { data: existingRows, error: existingError } = discoveredIds.length
+      ? await supabase.from("competitors").select("id,youtube_channel_id,ai_production_status,ai_production_evidence,is_active,user_tracking_preference,discovery_count").eq("owner_id", user.id).in("youtube_channel_id", discoveredIds)
+      : { data: [], error: null };
+    if (existingError) return NextResponse.json({ error: "Could not load saved channel decisions.", details: existingError.message }, { status: 500 });
+    const existingById = new Map((existingRows ?? []).map((row) => [row.youtube_channel_id, row]));
+    const discoveredAt = new Date().toISOString();
+    const rows = candidates.map((channel) => {
+      const assessment = assessments.get(channel.id);
+      const existing = existingById.get(channel.id);
+      const passed = Boolean(assessment && assessment.confidenceScore >= MIN_DISCOVERY_SCORE && assessment.nicheRelevance >= MIN_DISCOVERY_SCORE && assessment.recommendation === "strong_candidate");
+      const oldEvidence = existing?.ai_production_evidence && typeof existing.ai_production_evidence === "object" ? existing.ai_production_evidence as Record<string, unknown> : {};
+      const evidence = assessment ? {
+        ...oldEvidence, reviewStatus: passed ? "ai_screened_high_confidence" : "ai_filtered",
+        explanation: assessment.reason, confidenceScore: assessment.confidenceScore,
+        nicheRelevance: assessment.nicheRelevance, recommendation: assessment.recommendation,
+        evidence: assessment.evidence, screeningProvider, screenedAt: discoveredAt,
+        sampleVideos: samplesByChannel.get(channel.id) ?? oldEvidence.sampleVideos ?? [],
         requiresHumanVerification: true,
-      },
-      last_checked_at: new Date().toISOString(),
-    }); });
-
+      } : { ...oldEvidence, sampleVideos: samplesByChannel.get(channel.id) ?? oldEvidence.sampleVideos ?? [] };
+      return {
+        owner_id: user.id, youtube_channel_id: channel.id,
+        channel_title: channel.snippet?.title ?? "Untitled channel",
+        channel_url: channel.snippet?.customUrl ? `https://www.youtube.com/@${channel.snippet.customUrl.replace(/^@/, "")}` : `https://www.youtube.com/channel/${channel.id}`,
+        description: channel.snippet?.description ?? null, published_at: channel.snippet?.publishedAt ?? null,
+        country: channel.snippet?.country ?? null, language,
+        subscriber_count: channel.statistics?.subscriberCount ?? null,
+        video_count: channel.statistics?.videoCount ?? null, view_count: channel.statistics?.viewCount ?? null,
+        // Preserve all existing manual decisions and active state.
+        is_active: existing?.is_active ?? false,
+        user_tracking_preference: existing?.user_tracking_preference ?? false,
+        ai_production_status: existing?.ai_production_status ?? "needs_review",
+        ai_production_evidence: evidence,
+        discovery_count: (existing?.discovery_count ?? 0) + 1,
+        last_discovered_at: discoveredAt,
+        discovery_eligibility: assessment ? (passed ? "eligible" : "filtered") : "pending_screen",
+        discovery_reason: assessment?.reason ?? "Not screened in this run.",
+        discovery_score: assessment ? Math.min(assessment.confidenceScore, assessment.nicheRelevance) : null,
+        last_checked_at: discoveredAt,
+      };
+    });
     let saved = 0;
     if (rows.length) {
-      const { data, error } = await supabase.from("competitors")
-        .upsert(rows, { onConflict: "owner_id,youtube_channel_id", ignoreDuplicates: true }).select("id");
-      if (error) return NextResponse.json({ error: "YouTube search succeeded, but saving competitors failed.", details: error.message }, { status: 500 });
+      const { data, error } = await supabase.from("competitors").upsert(rows, { onConflict: "owner_id,youtube_channel_id" }).select("id");
+      if (error) return NextResponse.json({ error: "YouTube search succeeded, but saving discovered channels failed.", details: error.message }, { status: 500 });
       saved = data?.length ?? 0;
-    }
-
-    // Refresh sample-video evidence for channels that were already saved.
-    // The original upsert intentionally ignores duplicates so it cannot reset
-    // a user's manual qualification/rejection decision.
-    const eligibleIds = eligible.map((channel) => channel.id);
-    if (eligibleIds.length) {
-      const { data: existingRows, error: existingError } = await supabase.from("competitors")
-        .select("id,youtube_channel_id,ai_production_evidence")
-        .eq("owner_id", user.id).in("youtube_channel_id", eligibleIds);
-      if (existingError) return NextResponse.json({ error: "Channels were discovered, but sample-video evidence could not be refreshed.", details: existingError.message }, { status: 500 });
-      for (const row of existingRows ?? []) {
-        const newSamples = samplesByChannel.get(row.youtube_channel_id) ?? [];
-        if (!newSamples.length) continue;
-        const oldEvidence = row.ai_production_evidence && typeof row.ai_production_evidence === "object"
-          ? row.ai_production_evidence as Record<string, unknown> : {};
-        const mergedEvidence = {
-          ...oldEvidence,
-          sampleVideos: newSamples,
-          sampleVideosRefreshedAt: new Date().toISOString(),
-          requiresHumanVerification: true,
-        };
-        const { error: evidenceError } = await supabase.from("competitors")
-          .update({ ai_production_evidence: mergedEvidence })
-          .eq("id", row.id).eq("owner_id", user.id);
-        if (evidenceError) return NextResponse.json({ error: "Could not update sample-video evidence for an existing channel.", details: evidenceError.message }, { status: 500 });
-      }
     }
 
     const { data: quota } = await supabase.rpc("get_youtube_quota_status");
@@ -287,10 +268,12 @@ export async function POST(request: NextRequest) {
       priorRejectedExamplesUsed: rejectedExamples.length,
       previouslyRejectedChannelsSkipped: rejectedIds.size,
       channelsPassingConfidenceThreshold: eligible.length,
+      channelsFilteredByAI: candidates.filter((channel) => assessments.has(channel.id) && !eligible.includes(channel)).length,
+      channelsPendingScreening: candidates.filter((channel) => !assessments.has(channel.id)).length,
       minimumConfidenceScore: MIN_DISCOVERY_SCORE,
       minimumNicheRelevance: MIN_DISCOVERY_SCORE,
       screeningProvider,
-      channelsWithinAgeRange: eligible.length, saved, candidatesSaved: saved, sampleEvidenceRefreshed: eligible.slice(0, remaining).filter((channel) => (samplesByChannel.get(channel.id)?.length ?? 0) > 0).length, activeCompetitorCount: count ?? 0,
+      channelsWithinAgeRange: eligible.length, saved, candidatesSaved: saved, sampleEvidenceRefreshed: candidates.filter((channel) => (samplesByChannel.get(channel.id)?.length ?? 0) > 0).length, activeCompetitorCount: count ?? 0,
       activeCompetitorLimit: MAX_ACTIVE_COMPETITORS, ageFilter: "No channel-age restriction; global discovery.",
       screeningLimitPerRun: MAX_CHANNELS_PER_AI_SCREEN,
       qualification: "Only strong candidates with confidence and niche relevance scores above 80 are saved. AI-production style still requires human verification.",
