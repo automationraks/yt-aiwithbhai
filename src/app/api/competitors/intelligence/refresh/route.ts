@@ -127,7 +127,10 @@ export async function POST() {
 
     const assessments = await assessNicheVideos(videos);
     const relevantVideos = videos.filter((video) => assessments.get(video.id)?.relevant);
-    const videoRows = relevantVideos.map((video) => {
+    const relevantIds = new Set(relevantVideos.map((video) => video.id));
+    // Save all classifications in one upsert. Off-niche rows remain auditable,
+    // but every downstream research view filters to is_niche_relevant=true.
+    const videoRows = videos.map((video) => {
       const assessment = assessments.get(video.id)!;
       const duration = durationSeconds(video.contentDetails?.duration);
       return {
@@ -145,43 +148,19 @@ export async function POST() {
         thumbnail_url: video.snippet?.thumbnails?.high?.url ?? video.snippet?.thumbnails?.medium?.url ?? null,
         video_url: `https://www.youtube.com/watch?v=${video.id}`,
         language: video.snippet?.defaultLanguage ?? null,
-        is_niche_relevant: true,
+        is_niche_relevant: assessment.relevant,
         niche_relevance_score: assessment.score,
         niche_relevance_reason: assessment.reason,
       };
     });
 
-    // Persist classification for both matches and rejects. Non-matching videos remain
-    // auditable in Supabase but are excluded from Video Explorer, Analytics and ideas.
-    for (const video of videos) {
-      const assessment = assessments.get(video.id)!;
-      if (assessment.relevant) continue;
-      const { error: markError } = await supabase.from("videos").upsert({
-        owner_id: user.id, competitor_id: videoChannelMap.get(video.id) ?? null,
-        youtube_video_id: video.id, title: video.snippet?.title ?? "Untitled video",
-        description: (video.snippet?.description ?? "").slice(0, 5000),
-        published_at: video.snippet?.publishedAt ?? null,
-        duration_seconds: durationSeconds(video.contentDetails?.duration),
-        view_count: video.statistics?.viewCount ?? null,
-        like_count: video.statistics?.likeCount ?? null,
-        comment_count: video.statistics?.commentCount ?? null,
-        is_short: durationSeconds(video.contentDetails?.duration) <= 180,
-        thumbnail_url: video.snippet?.thumbnails?.high?.url ?? video.snippet?.thumbnails?.medium?.url ?? null,
-        video_url: `https://www.youtube.com/watch?v=${video.id}`,
-        language: video.snippet?.defaultLanguage ?? null,
-        is_niche_relevant: false,
-        niche_relevance_score: assessment.score,
-        niche_relevance_reason: assessment.reason,
-      }, { onConflict: "owner_id,youtube_video_id" });
-      if (markError) throw new Error(`Saving excluded video assessment failed: ${markError.message}`);
-    }
-
     let savedVideos: Array<{ id: string; youtube_video_id: string }> = [];
     if (videoRows.length) {
       const { data, error: saveError } = await supabase.from("videos")
-        .upsert(videoRows, { onConflict: "owner_id,youtube_video_id" }).select("id,youtube_video_id");
-      if (saveError) throw new Error(`Saving niche-matched videos failed: ${saveError.message}`);
-      savedVideos = data ?? [];
+        .upsert(videoRows, { onConflict: "owner_id,youtube_video_id" })
+        .select("id,youtube_video_id");
+      if (saveError) throw new Error(`Saving classified video records failed: ${saveError.message}`);
+      savedVideos = (data ?? []).filter((row) => relevantIds.has(row.youtube_video_id));
     }
 
     const snapshots = savedVideos.map((saved) => {
