@@ -19,7 +19,7 @@ type Competitor = {
   subscriber_count: number | string | null; video_count: number | string | null;
   view_count: number | string | null; is_active: boolean;
   ai_production_status: "needs_review" | "qualified" | "rejected";
-  ai_production_evidence: { sampleVideos?: SampleVideo[]; aiScreening?: AIScreening } | null;
+  ai_production_evidence: { sampleVideos?: SampleVideo[]; aiScreening?: AIScreening; confidenceScore?: number; nicheRelevance?: number } | null;
   ai_production_review_note: string | null;
 };
 type DiscoveryQuotaBucket = { remaining: number };
@@ -80,9 +80,20 @@ export default function CompetitorExplorerPage() {
       const response = await fetch("/api/competitors", { cache: "no-store" });
       const result = await response.json();
       if (!response.ok) throw new Error(result.error || "Could not load competitors.");
-      const rows = result.competitors ?? [];
-      setCompetitors(rows);
-      setScreenResults(Object.fromEntries(rows.filter((item: Competitor) => item.ai_production_evidence?.aiScreening).map((item: Competitor) => [item.id, item.ai_production_evidence?.aiScreening])));
+      const rows: Competitor[] = result.competitors ?? [];
+      // Keep rejected and explicitly low-confidence candidates out of the refreshed list.
+      // Records remain in Supabase so review history is preserved.
+      const visibleRows = rows.filter((item) => {
+        if (item.ai_production_status === "rejected") return false;
+        const confidence = item.ai_production_evidence?.confidenceScore;
+        const relevance = item.ai_production_evidence?.nicheRelevance;
+        return !(
+          (typeof confidence === "number" && confidence < 81) ||
+          (typeof relevance === "number" && relevance < 81)
+        );
+      });
+      setCompetitors(visibleRows);
+      setScreenResults(Object.fromEntries(visibleRows.filter((item) => item.ai_production_evidence?.aiScreening).map((item) => [item.id, item.ai_production_evidence?.aiScreening])));
     } catch (err) { setError(err instanceof Error ? err.message : "Could not load competitors."); }
     finally { setLoading(false); }
   }, []);
