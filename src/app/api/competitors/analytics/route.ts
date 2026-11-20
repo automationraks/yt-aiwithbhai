@@ -19,7 +19,7 @@ export async function GET() {
   const ids = competitors.map((item) => item.id);
   const [channelHistory, videoRows] = await Promise.all([
     supabase.from("competitor_snapshots").select("competitor_id,subscriber_count,view_count,captured_at").in("competitor_id", ids).order("captured_at", { ascending: false }),
-    supabase.from("videos").select("id,competitor_id,title,view_count,published_at,is_short").in("competitor_id", ids).order("published_at", { ascending: false }),
+    supabase.from("videos").select("id,competitor_id,youtube_video_id,title,description,view_count,published_at,is_short,video_url,thumbnail_url").in("competitor_id", ids).order("published_at", { ascending: false }),
   ]);
   if (channelHistory.error || videoRows.error) return NextResponse.json({ error: "Could not load analytics history.", details: channelHistory.error?.message ?? videoRows.error?.message }, { status: 500 });
 
@@ -57,13 +57,21 @@ export async function GET() {
       (uploadIntervalDays === null ? 0 : Math.max(0,25-Math.max(0,uploadIntervalDays-7)*1.5)) +
       (videos.length >= 5 ? 10 : videos.length*2)
     )));
+    const explorerEvidence = competitor.ai_production_evidence && typeof competitor.ai_production_evidence === "object"
+      ? competitor.ai_production_evidence as { sampleVideos?: Array<{ videoId?: string | null; title?: string; videoUrl?: string | null; thumbnailUrl?: string | null; matchedQuery?: string }> }
+      : {};
+    const recommendedIds = new Set((explorerEvidence.sampleVideos ?? []).map((sample) => sample.videoId).filter((id): id is string => Boolean(id)));
+    const recommendedVideos = videos.filter((video) => recommendedIds.has(video.youtube_video_id)).map((video) => {
+      const source = (explorerEvidence.sampleVideos ?? []).find((sample) => sample.videoId === video.youtube_video_id);
+      return { id: video.youtube_video_id, title: video.title, views: Number(video.view_count ?? 0), publishedAt: video.published_at, isShort: video.is_short, url: video.video_url ?? "https://www.youtube.com/watch?v=" + video.youtube_video_id, thumbnailUrl: video.thumbnail_url, matchedQuery: source?.matchedQuery ?? null };
+    });
     const topVideos = videos.slice().sort((a,b)=>Number(b.view_count??0)-Number(a.view_count??0)).slice(0,3)
       .map(video=>({title:video.title,views:Number(video.view_count??0),publishedAt:video.published_at,isShort:video.is_short}));
     return {
       id: competitor.id, title: competitor.channel_title, url: competitor.channel_url,
       aiProductionScore, aiScoreBreakdown: {visual,faceless,relevance,consistency,growth},
       aiRecommendation: typeof ai.recommendation === "string" ? ai.recommendation : "not_screened",
-      topVideos,
+      topVideos, recommendedVideos,
       subscribers: currentSubs, totalViews: Number(competitor.view_count ?? 0),
       subscriberDelta, growthPercent: growthPercent === null ? null : Number(growthPercent.toFixed(2)),
       snapshotCount: history.length, lastSnapshotAt: recent?.captured_at ?? null,
