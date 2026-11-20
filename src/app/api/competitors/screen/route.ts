@@ -64,9 +64,11 @@ async function getThumbnail(url: string): Promise<ImagePart | null> {
   } catch { return null; }
 }
 
-const instruction = `You are screening YouTube channels for a research database. Target: channels about industrial manufacturing/engineering whose videos are mostly faceless and plausibly use AI-generated visuals and synthetic narration. Do NOT confuse channels discussing AI technology with channels produced using AI.
+const instruction = `You are evaluating a YouTube creator for a channel research database. Target niche: technical education about designing, building, scaling and operating AI-powered software systems for IT professionals.
 
-Assess only the supplied channel description, sample video titles/descriptions, and thumbnails. Thumbnails can suggest visual style but cannot prove that visuals were AI-generated. Metadata cannot establish whether narration is synthetic. Never claim you heard audio or watched the full videos. Treat explicit creator disclosure as stronger evidence than visual guesses.
+Prioritize creators who teach AI system design, LLM application architecture, RAG pipelines, vector databases, AI agents and orchestration, model serving/inference, distributed systems, production AI infrastructure, evaluation/observability, reliability, security and real-world architecture case studies.
+
+Do NOT confuse creators who merely discuss AI news, AI tools, generic prompt tips or AI business trends with creators who teach technical architecture and engineering. Assess supplied channel description, sample video titles/descriptions and thumbnails only. Never claim you watched full videos or verified technical correctness from metadata alone.
 
 Return ONLY JSON with this exact structure:
 {
@@ -79,7 +81,8 @@ Return ONLY JSON with this exact structure:
  "evidence": ["short evidence items"],
  "limitations": ["what cannot be verified"]
 }
-Scores are 0-100. A strong_candidate requires clear industrial relevance and multiple indicators of faceless/AI-style production. Do not infer synthetic narration from a polished thumbnail. If evidence is weak, choose possible_candidate or unlikely_match. Include a limitation that narration cannot be verified from the supplied metadata/images unless the creator explicitly says so.`;
+
+Use industrialRelevance as the legacy numeric field for AI-systems niche relevance (0-100): score relevance to the target technical education niche, not manufacturing. Use facelessFormatLikelihood as technical teaching format suitability and syntheticVisualStyleLikelihood as visual explainer/diagram suitability; neither is a requirement. A strong_candidate requires repeated evidence of substantive AI systems architecture and engineering education aimed at developers/IT professionals. Penalize generic AI news, tool roundups and nontechnical content. Include specific evidence and uncertainty.`;
 
 function parseResult(text: string) {
   const cleaned = text.replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/, "").trim();
