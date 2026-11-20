@@ -31,9 +31,21 @@ async function fetchRecentChannelSamples(supabase: NonNullable<Awaited<ReturnTyp
   playlistUrl.searchParams.set("maxResults", "5");
   playlistUrl.searchParams.set("key", apiKey);
   const playlistResponse = await fetch(playlistUrl, { cache: "no-store", signal: AbortSignal.timeout(15000) });
-  const playlistPayload = await playlistResponse.json().catch(() => ({}));
-  if (!playlistResponse.ok) throw new Error(playlistPayload?.error?.message || "Could not load recent channel videos.");
-  return (playlistPayload?.items ?? []).map((item: any) => {
+  type PlaylistItem = {
+    contentDetails?: { videoId?: string; videoPublishedAt?: string };
+    snippet?: {
+      resourceId?: { videoId?: string };
+      title?: string;
+      description?: string;
+      channelTitle?: string;
+      publishedAt?: string;
+      thumbnails?: { medium?: { url?: string }; default?: { url?: string } };
+    };
+  };
+  const playlistPayload: { error?: { message?: string }; items?: PlaylistItem[] } =
+    await playlistResponse.json().catch(() => ({}));
+  if (!playlistResponse.ok) throw new Error(playlistPayload.error?.message || "Could not load recent channel videos.");
+  return (playlistPayload.items ?? []).map((item) => {
     const videoId = item.contentDetails?.videoId ?? item.snippet?.resourceId?.videoId;
     return {
       videoId,
