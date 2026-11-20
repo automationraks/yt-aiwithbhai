@@ -48,14 +48,6 @@ async function youtubeGet<T>(resource: string, params: Record<string, string>) {
   return payload as T;
 }
 
-function isWithinChannelAge(publishedAt?: string) {
-  if (!publishedAt) return false;
-  const created = new Date(publishedAt).getTime();
-  if (!Number.isFinite(created)) return false;
-  const twoYearsAgo = new Date(); twoYearsAgo.setFullYear(twoYearsAgo.getFullYear() - 2);
-  const fourYearsAgo = new Date(); fourYearsAgo.setFullYear(fourYearsAgo.getFullYear() - 4);
-  return created <= twoYearsAgo.getTime() && created >= fourYearsAgo.getTime() && created <= Date.now();
-}
 
 export async function POST(request: NextRequest) {
   const supabase = await createSupabaseServerClient();
@@ -123,7 +115,7 @@ export async function POST(request: NextRequest) {
     }
 
     const eligible = channels
-      .filter((channel) => channel.id && channel.snippet?.title && isWithinChannelAge(channel.snippet.publishedAt))
+      .filter((channel) => channel.id && channel.snippet?.title)
       .sort((a, b) => Number(b.statistics?.subscriberCount ?? 0) - Number(a.statistics?.subscriberCount ?? 0));
 
     const rows = eligible.slice(0, remaining).map((channel) => ({
@@ -188,7 +180,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({
       searchedKeywords: keywords, language, channelsDiscovered: channelIds.size,
       channelsWithinAgeRange: eligible.length, saved, candidatesSaved: saved, sampleEvidenceRefreshed: eligible.slice(0, remaining).filter((channel) => (samplesByChannel.get(channel.id)?.length ?? 0) > 0).length, activeCompetitorCount: count ?? 0,
-      activeCompetitorLimit: MAX_ACTIVE_COMPETITORS, ageFilter: "Channels created between 2 and 4 years ago",
+      activeCompetitorLimit: MAX_ACTIVE_COMPETITORS, ageFilter: "No channel-age restriction; global discovery.",
       qualification: "Candidates only. Public YouTube metadata cannot verify AI voiceovers or AI-generated visuals. Review the sample videos before marking a channel as AI-produced.",
       quotaNote: "This dashboard tracks requests made through this app only. Other apps using the same Google Cloud project also consume its quota.",
       quota: quota ?? null,
