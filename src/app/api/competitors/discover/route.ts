@@ -139,7 +139,6 @@ export async function POST(request: NextRequest) {
 
   const { count, error: countError } = await supabase.from("competitors").select("id", { count: "exact", head: true }).eq("owner_id", user.id).eq("is_active", true);
   if (countError) return NextResponse.json({ error: "Could not check your active competitor limit." }, { status: 500 });
-  const remaining = Math.max(0, MAX_ACTIVE_COMPETITORS - (count ?? 0));
 
   try {
     const samplesByChannel = new Map<string, SampleVideo[]>();
