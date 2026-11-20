@@ -74,7 +74,7 @@ export async function POST() {
     }
 
     const videoIds = [...new Set(samples.map((item) => item.videoId))];
-    let videos: VideoItem[] = [];
+    const videos: VideoItem[] = [];
     for (let index = 0; index < videoIds.length; index += 50) {
       await reserveQuota(supabase);
       const result = await youtubeGet<{ items?: VideoItem[] }>("videos", {
