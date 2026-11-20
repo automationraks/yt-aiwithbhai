@@ -109,8 +109,8 @@ export default function CompetitorExplorerPage() {
 
   async function reviewAI(item: Competitor, status: "qualified" | "rejected") {
     const note = status === "qualified"
-      ? "Manually reviewed sample videos; production style appears consistent with AI-assisted faceless content."
-      : "Manually reviewed sample videos; does not match the target AI-produced faceless format.";
+      ? "Manually reviewed sample videos; creator consistently teaches AI systems architecture and engineering to IT professionals."
+      : "Manually reviewed sample videos; creator does not match the AI systems architecture education niche.";
     setUpdatingId(item.id); setError(""); setNotice("");
     try {
       const response = await fetch("/api/competitors", {
