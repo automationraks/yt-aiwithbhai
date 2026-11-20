@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { ArrowLeft, RefreshCw, TrendingUp, TrendingDown, Minus, Loader2, ExternalLink, BarChart3 } from "lucide-react";
 
@@ -12,11 +12,12 @@ type Item = {
   latestVideos:Array<{title:string;views:number;publishedAt:string|null;isShort:boolean}>;
 };
 type Summary={tracked:number;growing:number;declining:number;totalSubscribers:number;videosSampled:number;averageAIProductionScore:number};
+const EMPTY_SUMMARY: Summary = { tracked: 0, growing: 0, declining: 0, totalSubscribers: 0, videosSampled: 0, averageAIProductionScore: 0 };
 export default function CompetitorAnalyticsPage(){
- const[data,setData]=useState<Item[]>([]);const[summary,setSummary]=useState<Summary>({tracked:0,growing:0,declining:0,totalSubscribers:0,videosSampled:0,averageAIProductionScore:0});
+ const[data,setData]=useState<Item[]>([]);const[summary,setSummary]=useState<Summary>(EMPTY_SUMMARY);
  const[methodology,setMethodology]=useState("");const[loading,setLoading]=useState(true);const[refreshing,setRefreshing]=useState(false);const[error,setError]=useState("");const[message,setMessage]=useState("");
- async function load(){setLoading(true);setError("");try{const response=await fetch("/api/competitors/analytics",{cache:"no-store"});const result=await response.json();if(!response.ok)throw new Error(result.error||"Could not load analytics");setData(result.analytics??[]);setSummary(result.summary??summary);setMethodology(result.methodology??"");}catch(e){setError(e instanceof Error?e.message:"Could not load analytics");}finally{setLoading(false);}}
- useEffect(()=>{void load()},[]);
+ const load = useCallback(async () => {setLoading(true);setError("");try{const response=await fetch("/api/competitors/analytics",{cache:"no-store"});const result=await response.json();if(!response.ok)throw new Error(result.error||"Could not load analytics");setData(result.analytics??[]);setSummary(result.summary??EMPTY_SUMMARY);setMethodology(result.methodology??"");}catch(e){setError(e instanceof Error?e.message:"Could not load analytics");}finally{setLoading(false);}}, []);
+ useEffect(()=>{void load()},[load]);
  async function refresh(){setRefreshing(true);setError("");setMessage("");try{const response=await fetch("/api/competitors/intelligence/refresh",{method:"POST"});const result=await response.json();if(!response.ok)throw new Error(result.error||"Refresh failed");setMessage(`Updated ${result.processed} channels and fetched ${result.videosFetched} recent videos. Run refresh again to process the next batch.`);await load();}catch(e){setError(e instanceof Error?e.message:"Refresh failed");}finally{setRefreshing(false);}}
  const fmt=(n:number)=>new Intl.NumberFormat("en",{notation:"compact",maximumFractionDigits:1}).format(n);
  return <main className="min-h-screen bg-[#090d14] p-4 text-slate-100 md:p-8"><div className="mx-auto max-w-[1440px]">
