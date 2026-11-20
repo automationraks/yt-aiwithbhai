@@ -1,3 +1,3 @@
 @import "tailwindcss";
-:root{color-scheme:dark;--background:#090d14;--panel:#101722;--border:#243144;--muted:#91a0b5;--text:#edf3fb;--accent:#f59e0b}
-*{box-sizing:border-box}html,body{min-height:100%}body{margin:0;background:var(--background);color:var(--text);font-family:Arial,Helvetica,sans-serif}button,a{-webkit-tap-highlight-color:transparent}::selection{background:rgba(245,158,11,.25)}
+:root{color-scheme:dark;--background:#090d14;--panel:#101722;--border:#243144;--muted:#91a0b5;--text:#edf3fb;--accent:#22d3ee}
+*{box-sizing:border-box}html,body{min-height:100%}body{margin:0;background:var(--background);color:var(--text);font-family:Arial,Helvetica,sans-serif}button,a{-webkit-tap-highlight-color:transparent}::selection{background:rgba(34,211,238,.25)}
