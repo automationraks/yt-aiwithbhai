@@ -42,8 +42,9 @@ export async function GET() {
     const uploadIntervalDays = intervals.length ? intervals.reduce((a,b)=>a+b,0)/intervals.length : null;
     const averageViews = videos.length ? Math.round(videos.reduce((sum,video)=>sum+Number(video.view_count??0),0)/videos.length) : 0;
     const evidence = competitor.ai_production_evidence && typeof competitor.ai_production_evidence === "object"
-      ? competitor.ai_production_evidence as Record<string, any> : {};
-    const ai = evidence.aiScreening && typeof evidence.aiScreening === "object" ? evidence.aiScreening : {};
+      ? competitor.ai_production_evidence as { aiScreening?: Record<string, unknown> }
+      : {};
+    const ai = evidence.aiScreening ?? {};
     const visual = Math.max(0, Math.min(100, Number(ai.syntheticVisualStyleLikelihood) || 0));
     const faceless = Math.max(0, Math.min(100, Number(ai.facelessFormatLikelihood) || 0));
     const relevance = Math.max(0, Math.min(100, Number(ai.industrialRelevance) || 0));
@@ -61,7 +62,7 @@ export async function GET() {
     return {
       id: competitor.id, title: competitor.channel_title, url: competitor.channel_url,
       aiProductionScore, aiScoreBreakdown: {visual,faceless,relevance,consistency,growth},
-      aiRecommendation: ai.recommendation ?? "not_screened",
+      aiRecommendation: typeof ai.recommendation === "string" ? ai.recommendation : "not_screened",
       topVideos,
       subscribers: currentSubs, totalViews: Number(competitor.view_count ?? 0),
       subscriberDelta, growthPercent: growthPercent === null ? null : Number(growthPercent.toFixed(2)),
