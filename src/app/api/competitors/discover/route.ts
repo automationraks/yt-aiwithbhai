@@ -6,7 +6,6 @@ export const dynamic = "force-dynamic";
 
 const YOUTUBE_API = "https://www.googleapis.com/youtube/v3";
 const MAX_ACTIVE_COMPETITORS = 100;
-const MAX_KEYWORDS = 5;
 
 type QuotaReservation = { allowed: boolean; bucket: string; used: number; limit: number; remaining: number; resetAt: string; quotaDate: string };
 type SampleVideo = {
@@ -62,8 +61,8 @@ export async function POST(request: NextRequest) {
   const keywords = Array.isArray(body.keywords)
     ? [...new Set(body.keywords.filter((item): item is string => typeof item === "string").map((item) => item.trim()).filter(Boolean))]
     : [];
-  if (!language || keywords.length === 0 || keywords.length > MAX_KEYWORDS || keywords.some((keyword) => keyword.length > 80)) {
-    return NextResponse.json({ error: `Provide language "hi" or "en" and between 1 and ${MAX_KEYWORDS} keywords (maximum 80 characters each).` }, { status: 400 });
+  if (!language || keywords.length === 0 || keywords.some((keyword) => keyword.length > 80)) {
+    return NextResponse.json({ error: `Provide language "hi" or "en" and at least one keyword (maximum 80 characters each).` }, { status: 400 });
   }
 
   const { count, error: countError } = await supabase.from("competitors").select("id", { count: "exact", head: true }).eq("owner_id", user.id).eq("is_active", true);
