@@ -15,10 +15,10 @@ export async function GET() {
   }
 
   const [competitors, videos, ideas, workflows] = await Promise.all([
-    supabase.from("competitors").select("id", { count: "exact", head: true }).eq("is_active", true),
-    supabase.from("videos").select("id", { count: "exact", head: true }),
-    supabase.from("content_ideas").select("id", { count: "exact", head: true }),
-    supabase.from("automation_runs").select("id", { count: "exact", head: true }).in("status", ["queued", "running"]),
+    supabase.from("competitors").select("id", { count: "exact", head: true }).eq("owner_id", user.id).eq("is_active", true).eq("ai_production_status", "qualified"),
+    supabase.from("videos").select("id", { count: "exact", head: true }).eq("owner_id", user.id).eq("is_niche_relevant", true),
+    supabase.from("content_ideas").select("id", { count: "exact", head: true }).eq("owner_id", user.id),
+    supabase.from("automation_runs").select("id", { count: "exact", head: true }).eq("owner_id", user.id).in("status", ["queued", "running"]),
   ]);
 
   const failed = [competitors, videos, ideas, workflows].find((result) => result.error);
