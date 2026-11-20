@@ -40,9 +40,9 @@ export default function LoginPage() {
     <main className="flex min-h-screen items-center justify-center bg-[#090d14] px-4 text-white">
       <section className="w-full max-w-md rounded-2xl border border-[var(--border)] bg-[var(--panel)] p-7 shadow-2xl">
         <div className="mb-7 flex items-center gap-3">
-          <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-amber-500 text-slate-950 text-xl font-bold">IH</div>
+          <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-cyan-500 text-slate-950 text-xl font-bold">IH</div>
           <div>
-            <h1 className="text-lg font-semibold tracking-wide">INDUSTRIAL HUB</h1>
+            <h1 className="text-lg font-semibold tracking-wide">AIWITHBH@I</h1>
             <p className="text-xs text-[var(--muted)]">Owner workspace sign in</p>
           </div>
         </div>
@@ -59,7 +59,7 @@ export default function LoginPage() {
               required
               value={email}
               onChange={(event) => setEmail(event.target.value)}
-              className="mt-2 w-full rounded-lg border border-[var(--border)] bg-[#090d14] px-3 py-3 text-sm outline-none focus:border-amber-500"
+              className="mt-2 w-full rounded-lg border border-[var(--border)] bg-[#090d14] px-3 py-3 text-sm outline-none focus:border-cyan-500"
               placeholder="you@example.com"
             />
           </label>
@@ -71,7 +71,7 @@ export default function LoginPage() {
               required
               value={password}
               onChange={(event) => setPassword(event.target.value)}
-              className="mt-2 w-full rounded-lg border border-[var(--border)] bg-[#090d14] px-3 py-3 text-sm outline-none focus:border-amber-500"
+              className="mt-2 w-full rounded-lg border border-[var(--border)] bg-[#090d14] px-3 py-3 text-sm outline-none focus:border-cyan-500"
               placeholder="Enter your password"
             />
           </label>
@@ -79,7 +79,7 @@ export default function LoginPage() {
           <button
             type="submit"
             disabled={loading}
-            className="w-full rounded-lg bg-amber-500 px-4 py-3 text-sm font-semibold text-slate-950 hover:bg-amber-400 disabled:cursor-not-allowed disabled:opacity-60"
+            className="w-full rounded-lg bg-cyan-500 px-4 py-3 text-sm font-semibold text-slate-950 hover:bg-cyan-400 disabled:cursor-not-allowed disabled:opacity-60"
           >
             {loading ? "Signing in..." : "Sign in"}
           </button>
