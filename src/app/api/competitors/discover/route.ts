@@ -1,11 +1,14 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
+import { getAIConfiguration } from "@/lib/ai/provider";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 const YOUTUBE_API = "https://www.googleapis.com/youtube/v3";
 const MAX_ACTIVE_COMPETITORS = 100;
+const MAX_CHANNELS_PER_AI_SCREEN = 60;
+const MIN_DISCOVERY_SCORE = 81;
 
 type QuotaReservation = { allowed: boolean; bucket: string; used: number; limit: number; remaining: number; resetAt: string; quotaDate: string };
 type SampleVideo = {
@@ -23,6 +26,50 @@ type YouTubeChannel = {
   snippet?: { title?: string; description?: string; publishedAt?: string; country?: string; customUrl?: string };
   statistics?: { subscriberCount?: string; videoCount?: string; viewCount?: string };
 };
+
+
+type Assessment = { channelId: string; confidenceScore: number; nicheRelevance: number; recommendation: string; reason: string; evidence: string[] };
+const assessmentRules = "You are a strict channel research analyst for AIWithBh@i. Target: technical education and real-world case studies about AI systems for IT professionals: AI system design, LLM application architecture, RAG, vector databases, AI agents/orchestration, production AI engineering, inference/model serving, AI infrastructure, evaluation, observability, reliability, security and enterprise AI implementations. Official channels from Anthropic, Meta, Groq, OpenAI, DeepSeek, AWS, Databricks, Snowflake, NVIDIA, Palantir, CrowdStrike, Apple, Alphabet/Google and Tesla can qualify as primary sources only when their sample videos directly cover their AI technology, engineering, research or implementation. Reject children's entertainment, nursery rhymes, songs, gaming, lifestyle, generic entertainment, unrelated tutorials and channels with only incidental AI mentions. Never infer fit from subscriber count or channel name alone. For each channel provide confidenceScore 0-100 (confidence it genuinely fits), nicheRelevance 0-100, recommendation strong_candidate/possible_candidate/unlikely_match, concise reason, and up to 3 evidence items. Be conservative: weak or ambiguous evidence must score 80 or below. Return ONLY JSON in this shape: {\"assessments\":[{\"channelId\":\"...\",\"confidenceScore\":0,\"nicheRelevance\":0,\"recommendation\":\"unlikely_match\",\"reason\":\"...\",\"evidence\":[\"...\"]}]}. Include every channelId exactly once.";
+function parseAssessments(raw: string, ids: string[]) {
+ const cleaned=raw.replace(/^```(?:json)?\s*/i,"").replace(/\s*```$/,"").trim();
+ const parsed=JSON.parse(cleaned); const map=new Map<string,Assessment>();
+ for(const x of (Array.isArray(parsed.assessments)?parsed.assessments:[])) {
+  if(!ids.includes(x.channelId)||map.has(x.channelId)) continue;
+  const n=(v:unknown)=>Math.max(0,Math.min(100,Math.round(Number(v)||0)));
+  map.set(x.channelId,{channelId:x.channelId,confidenceScore:n(x.confidenceScore),nicheRelevance:n(x.nicheRelevance),recommendation:["strong_candidate","possible_candidate","unlikely_match"].includes(x.recommendation)?x.recommendation:"unlikely_match",reason:typeof x.reason==="string"?x.reason.slice(0,500):"No reason supplied.",evidence:Array.isArray(x.evidence)?x.evidence.filter((v:unknown)=>typeof v==="string").slice(0,3):[]});
+ }
+ return map;
+}
+async function screenDiscoveryChannels(channels: YouTubeChannel[], samples: Map<string,SampleVideo[]>) {
+ const config=getAIConfiguration();
+ if(!config.configured) throw new Error("Configure GEMINI_API_KEY or GROQ_API_KEY. Automatic screening is required; no unassessed channels will be saved.");
+ const batch=channels.slice(0,MAX_CHANNELS_PER_AI_SCREEN), ids=batch.map(c=>c.id);
+ const content=batch.map(c=>JSON.stringify({channelId:c.id,title:c.snippet?.title??"",description:(c.snippet?.description??"").slice(0,1200),sampleVideos:(samples.get(c.id)??[]).slice(0,5).map(v=>({title:v.title,description:v.description.slice(0,500),matchedQuery:v.matchedQuery}))})).join("\n");
+ const prompt="Assess all channels below using supplied public metadata only. Return every channelId exactly.\n"+content;
+ const gemini=async()=>{
+  const model=process.env.GEMINI_MODEL||"gemini-2.5-flash-lite";
+  const res=await fetch("https://generativelanguage.googleapis.com/v1beta/models/"+model+":generateContent",{method:"POST",headers:{"Content-Type":"application/json","x-goog-api-key":process.env.GEMINI_API_KEY!},body:JSON.stringify({systemInstruction:{parts:[{text:assessmentRules}]},contents:[{role:"user",parts:[{text:prompt}]}],generationConfig:{responseMimeType:"application/json",temperature:0.1,maxOutputTokens:8192}}),signal:AbortSignal.timeout(60000)});
+  const data=await res.json().catch(()=>({})); if(!res.ok) throw new Error(data?.error?.message||"Gemini screening failed.");
+  const out=data?.candidates?.[0]?.content?.parts?.map((p:{text?:string})=>p.text??"").join(""); if(!out) throw new Error("Gemini returned an empty screening result.");
+  return {assessments:parseAssessments(out,ids),provider:model};
+ };
+ const groq=async()=>{
+  const model=process.env.GROQ_MODEL||"openai/gpt-oss-120b";
+  const res=await fetch("https://api.groq.com/openai/v1/chat/completions",{method:"POST",headers:{"Content-Type":"application/json",Authorization:"Bearer "+process.env.GROQ_API_KEY!},body:JSON.stringify({model,temperature:0.1,response_format:{type:"json_object"},messages:[{role:"system",content:assessmentRules},{role:"user",content:prompt}]}),signal:AbortSignal.timeout(60000)});
+  const data=await res.json().catch(()=>({})); if(!res.ok) throw new Error(data?.error?.message||"Groq screening failed.");
+  const out=data?.choices?.[0]?.message?.content; if(!out) throw new Error("Groq returned an empty screening result.");
+  return {assessments:parseAssessments(out,ids),provider:model};
+ };
+ try {
+  if(config.primary==="groq"&&config.available.includes("groq")) return await groq();
+  if(config.available.includes("gemini")) return await gemini();
+  return await groq();
+ } catch(err) {
+  const fallback=config.primary==="gemini"?"groq":"gemini";
+  if(!config.available.includes(fallback)) throw err;
+  return fallback==="groq"?await groq():await gemini();
+ }
+}
 
 async function reserveQuota(supabase: Awaited<ReturnType<typeof createSupabaseServerClient>>, bucket: "search" | "general") {
   if (!supabase) throw new Error("Supabase is not configured.");
@@ -113,11 +160,18 @@ export async function POST(request: NextRequest) {
       channels.push(...(result.items ?? []));
     }
 
-    const eligible = channels
+    const candidates = channels
       .filter((channel) => channel.id && channel.snippet?.title)
-      .sort((a, b) => Number(b.statistics?.subscriberCount ?? 0) - Number(a.statistics?.subscriberCount ?? 0));
+      .sort((a, b) => (samplesByChannel.get(b.id)?.length ?? 0) - (samplesByChannel.get(a.id)?.length ?? 0));
+    const { assessments, provider: screeningProvider } = await screenDiscoveryChannels(candidates, samplesByChannel);
+    const eligible = candidates.filter((channel) => {
+      const assessment = assessments.get(channel.id);
+      return Boolean(assessment && assessment.confidenceScore >= MIN_DISCOVERY_SCORE && assessment.nicheRelevance >= MIN_DISCOVERY_SCORE && assessment.recommendation === "strong_candidate");
+    });
 
-    const rows = eligible.slice(0, remaining).map((channel) => ({
+    const rows = eligible.slice(0, remaining).map((channel) => {
+      const assessment = assessments.get(channel.id)!;
+      return ({
       owner_id: user.id,
       youtube_channel_id: channel.id,
       channel_title: channel.snippet?.title ?? "Untitled channel",
@@ -132,13 +186,19 @@ export async function POST(request: NextRequest) {
       is_active: false,
       ai_production_status: "needs_review",
       ai_production_evidence: {
-        reviewStatus: "unverified",
-        explanation: "Found through video-level searches targeting faceless/AI-style industrial production. This is a candidate signal, not proof of AI voiceover or AI-generated visuals.",
+        reviewStatus: "ai_screened_high_confidence",
+        explanation: assessment.reason,
+        confidenceScore: assessment.confidenceScore,
+        nicheRelevance: assessment.nicheRelevance,
+        recommendation: assessment.recommendation,
+        evidence: assessment.evidence,
+        screeningProvider,
+        screenedAt: new Date().toISOString(),
         sampleVideos: samplesByChannel.get(channel.id) ?? [],
         requiresHumanVerification: true,
       },
       last_checked_at: new Date().toISOString(),
-    }));
+    }); });
 
     let saved = 0;
     if (rows.length) {
@@ -178,9 +238,15 @@ export async function POST(request: NextRequest) {
     const { data: quota } = await supabase.rpc("get_youtube_quota_status");
     return NextResponse.json({
       searchedKeywords: keywords, language, channelsDiscovered: channelIds.size,
+      channelsAIassessed: assessments.size,
+      channelsPassingConfidenceThreshold: eligible.length,
+      minimumConfidenceScore: MIN_DISCOVERY_SCORE,
+      minimumNicheRelevance: MIN_DISCOVERY_SCORE,
+      screeningProvider,
       channelsWithinAgeRange: eligible.length, saved, candidatesSaved: saved, sampleEvidenceRefreshed: eligible.slice(0, remaining).filter((channel) => (samplesByChannel.get(channel.id)?.length ?? 0) > 0).length, activeCompetitorCount: count ?? 0,
       activeCompetitorLimit: MAX_ACTIVE_COMPETITORS, ageFilter: "No channel-age restriction; global discovery.",
-      qualification: "Candidates only. Public YouTube metadata cannot verify AI voiceovers or AI-generated visuals. Review the sample videos before marking a channel as AI-produced.",
+      screeningLimitPerRun: MAX_CHANNELS_PER_AI_SCREEN,
+      qualification: "Only strong candidates with confidence and niche relevance scores above 80 are saved. AI-production style still requires human verification.",
       quotaNote: "This dashboard tracks requests made through this app only. Other apps using the same Google Cloud project also consume its quota.",
       quota: quota ?? null,
     });
