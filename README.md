@@ -1,60 +1,46 @@
-# Industrial Hub
+# AIWithBh@i Studio
 
-Hindi-first research and operations dashboard for an industrial manufacturing and engineering YouTube channel.
+AI-powered YouTube research and content operations workspace for the existing **AIWithBh@i** channel.
+
+## Channel positioning
+
+**Niche:** AI Systems Architecture & Engineering  
+**Audience:** Software engineers, backend developers, AI engineers, solution architects and IT professionals.  
+**Promise:** Explain how to design, build, scale, evaluate and operate production-grade AI systems.
+
+### Core content pillars
+- AI system design and architecture
+- LLM application architecture and orchestration
+- Retrieval-augmented generation (RAG), embeddings and vector databases
+- AI agents and multi-agent systems
+- Model serving, inference and optimization
+- Distributed systems and scalable AI infrastructure
+- Evaluation, observability, reliability, security and governance
+- Real-world AI architecture case studies
+
+### Research rules
+Find creators who teach technical AI systems engineering. Do not classify channels as relevant merely because they discuss AI news, AI tools or prompt engineering. Review multiple videos for technical depth, accuracy, practical implementation and relevance to software/IT professionals.
+
+## Existing stack retained
+- Next.js 15 + TypeScript on Vercel
+- Supabase PostgreSQL, Auth and Storage
+- n8n Cloud for scheduled workflows
+- Gemini as primary AI provider; Groq as fallback
+- YouTube Data API with quota-aware request reservations
 
 ## YouTube API quota setup
+Run `supabase/migrations/20261115_youtube_quota_management.sql` in Supabase SQL Editor if it has not already been applied. The application tracks its own API usage; other apps using the same Google Cloud project are not included. Verify actual usage in Google Cloud Console → APIs & Services → YouTube Data API v3 → Quotas.
 
-After pulling the latest code, open the Supabase project SQL Editor and run:
+## Research setup
+The starter keyword action seeds English and Hindi searches for AI system design, LLM architecture, RAG, AI agents and production AI engineering. Search language is a relevance hint, not proof of spoken language.
 
-`supabase/migrations/20261115_youtube_quota_management.sql`
+Creator discovery returns candidates. AI screening is advisory and cannot establish technical correctness or substitute for watching sample videos. Manually approve creators before including them in the active research set.
 
-This creates a project-wide daily usage counter and two authenticated RPC functions used by the dashboard:
-- `get_youtube_quota_status()` reads today's tracked usage.
-- `reserve_youtube_quota(bucket, amount)` atomically reserves quota before an API request.
-
-The tracker enforces the documented default buckets:
-- `search.list`: 100 requests per day.
-- Other Data API endpoints: 10,000 quota units per day combined.
-
-The quota day resets at midnight Pacific Time. The dashboard tracks calls made through this application only. Other tools or apps using the same Google Cloud project also consume quota but are not automatically reflected in this counter. Verify actual usage in Google Cloud Console → APIs & Services → YouTube Data API v3 → Quotas.
-
-The discovery endpoint reserves one search request per keyword and one general quota unit per `channels.list` batch. Reservations are conservative: a reservation can remain counted if the outbound request fails after reservation.
+## AI providers
+Set `GEMINI_API_KEY` for Gemini screening. Optional `GEMINI_MODEL` defaults to `gemini-2.5-flash-lite`. Groq fallback uses `GROQ_API_KEY` and optional `GROQ_MODEL` (default `openai/gpt-oss-120b`).
 
 ## Local development
-
-Install dependencies with `npm install`, copy `.env.example` to `.env.local`, fill in the required server-side credentials, and run `npm run dev`.
-
-## AI-production competitor review
-
-Run `supabase/migrations/20261115_ai_channel_qualification.sql` in the Supabase SQL Editor. Existing competitor rows are moved to `needs_review` and paused. New discovery results are stored as inactive review candidates. Only manually qualified channels become active competitors.
-
-The public YouTube API does not prove that a channel uses AI narration or generated visuals. Review multiple sample videos before qualifying a channel.
-
-## Competitor intelligence
-
-- `POST /api/competitors/intelligence/refresh` refreshes up to 10 active, qualified channels per request.
-- The refresh fetches channel statistics and up to five latest uploads per channel, stores video metadata and historical channel/video snapshots.
-- `GET /api/competitors/analytics` calculates public-metric growth comparisons, sample-video views, upload spacing and a heuristic momentum score.
-- Open `/competitor-analytics` to inspect the ranking and run another refresh batch. The page also shows a weighted AI-production research score: visual-style likelihood 30%, faceless likelihood 20%, narration evidence 20%, industrial relevance 15%, upload consistency 10%, and public growth 5%. This is a heuristic for prioritization, not proof that a channel uses AI.
-- Growth comparisons require snapshots at least six days apart. Competitor watch time, CTR, revenue and retention are not available through the public Data API.
-
-## Setup checklist
-
-The dashboard reads live setup status for Supabase, configured AI provider keys, YouTube API key, n8n webhook credentials and saved research keywords. The starter keyword action inserts Hindi and English seed terms into `keyword_library`. n8n status currently checks credential configuration only; it does not verify that a scheduled workflow is active.
-
-## AI-assisted candidate screening
-
-Set `GEMINI_API_KEY` for Gemini multimodal screening. Optional model override: `GEMINI_MODEL` (default `gemini-2.5-flash-lite`). Groq text fallback uses `GROQ_API_KEY` and optional `GROQ_MODEL` (default `openai/gpt-oss-120b`).
-
-In Competitor Explorer, click **AI screen** on a candidate. Gemini evaluates the supplied channel/video metadata and up to three YouTube thumbnails; Groq fallback evaluates text only. Screening scores cover industrial relevance, faceless-format likelihood and visual-style likelihood. The AI result is advisory and does not change qualification status.
-
-Important limits: thumbnails and metadata do not prove that visuals were AI-generated. Synthetic narration cannot be verified without audio or reliable creator disclosure. Review the actual videos before manually qualifying a channel. The screening endpoint only processes candidates already stored for the signed-in owner.
-
-
-## Code validation
-
-GitHub Actions runs `npm ci`, `npm run typecheck`, `npm run lint` and `npm run build` on pushes and pull requests to `main`. Check the Actions tab for the result before deploying.
+Install dependencies with `npm install`, copy `.env.example` to `.env.local`, add server-side credentials and run `npm run dev`.
 
 ## Automation boundary
-
-The dashboard endpoints support manual refresh and reporting inputs. A recurring weekly schedule and alerts require an active n8n Cloud workflow with a configured webhook and secret. Adding credentials to the app does not create or activate that workflow; configure the schedule and connect the webhook in n8n before treating monitoring as automated.
+Manual research and refresh endpoints do not create scheduled workflows. Configure and activate n8n Cloud workflows separately. Publishing and channel-setting changes must remain approval-gated.
