@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
+import Image from "next/image";
 import { ArrowLeft, ExternalLink, Loader2, RefreshCw, Video, Eye, ThumbsUp, MessageCircle, CheckCircle2 } from "lucide-react";
 
 type VideoRow = {
@@ -64,7 +65,7 @@ export default function VideoExplorerPage() {
 
     <section className="overflow-hidden rounded-xl border border-slate-800 bg-[#111925]"><div className="border-b border-slate-800 px-5 py-4"><h2 className="text-sm font-semibold">Videos matching AIWithBh@i niche</h2><p className="mt-1 text-xs text-slate-400">Sorted by latest publication date · AI relevance threshold 81/100</p></div>
       {loading ? <div className="p-12 text-center text-sm text-slate-400"><Loader2 size={18} className="mx-auto mb-2 animate-spin"/>Loading niche-matched videos...</div> : videos.length === 0 ? <div className="p-12 text-center"><Video size={24} className="mx-auto mb-3 text-slate-600"/><p className="text-sm font-medium">No niche-matched videos saved yet</p><p className="mt-1 text-xs text-slate-500">Approve channels in <Link href="/competitors" className="text-cyan-300 underline">Creator Explorer</Link>, then run Refresh videos & metrics.</p></div> : <div className="divide-y divide-slate-800">{videos.map((video) => <article key={video.youtube_video_id} className="flex flex-col gap-4 p-4 md:flex-row">
-        {video.thumbnail_url && <a href={video.video_url ?? "#"} target="_blank" rel="noreferrer" className="block w-full shrink-0 overflow-hidden rounded-lg bg-slate-900 md:w-48"><img src={video.thumbnail_url} alt="" className="aspect-video w-full object-cover"/></a>}
+        {video.thumbnail_url && <a href={video.video_url ?? "#"} target="_blank" rel="noreferrer" className="block w-full shrink-0 overflow-hidden rounded-lg bg-slate-900 md:w-48"><Image src={video.thumbnail_url} alt="" width={384} height={216} sizes="(max-width: 768px) 100vw, 192px" className="aspect-video w-full object-cover"/></a>}
         <div className="min-w-0 flex-1"><div className="flex flex-wrap items-center gap-2"><span className="rounded-full bg-emerald-500/10 px-2 py-1 text-[10px] text-emerald-300">Niche match · {video.niche_relevance_score ?? "—"}/100</span><span className="rounded-full bg-slate-700 px-2 py-1 text-[10px] text-slate-300">{video.is_short ? "Short" : "Long-form"}</span><span className="text-[10px] text-slate-500">{dateLabel(video.published_at)}</span></div>
           <a href={video.video_url ?? "#"} target="_blank" rel="noreferrer" className="mt-2 block text-sm font-semibold text-slate-100 hover:text-cyan-300">{video.title} <ExternalLink size={12} className="ml-1 inline"/></a>
           <div className="mt-1 text-xs text-slate-400">{video.channelUrl ? <a href={video.channelUrl} target="_blank" rel="noreferrer" className="hover:text-cyan-300">{video.channelTitle}</a> : video.channelTitle}</div>
