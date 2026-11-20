@@ -11,10 +11,12 @@ export async function GET() {
   if (authError || !user) return NextResponse.json({ error: "Unauthorized." }, { status: 401 });
 
   const { data, error } = await supabase.from("competitors")
-    .select("id,youtube_channel_id,channel_title,channel_url,description,published_at,country,language,subscriber_count,video_count,view_count,is_active,discovered_at,last_checked_at,ai_production_status,ai_production_evidence,ai_production_reviewed_at,ai_production_review_note")
-    .eq("owner_id", user.id).order("subscriber_count", { ascending: false, nullsFirst: false }).limit(100);
+    .select("id,youtube_channel_id,channel_title,channel_url,description,published_at,country,language,subscriber_count,video_count,view_count,is_active,discovered_at,last_checked_at,ai_production_status,ai_production_evidence,ai_production_reviewed_at,ai_production_review_note,discovery_count,last_discovered_at,discovery_eligibility,discovery_reason,discovery_score,user_tracking_preference,last_user_action,last_user_action_at")
+    .eq("owner_id", user.id).order("subscriber_count", { ascending: false, nullsFirst: false }).limit(500);
   if (error) return NextResponse.json({ error: "Unable to load competitors.", details: error.message }, { status: 500 });
-  return NextResponse.json({ competitors: data ?? [], activeCount: (data ?? []).filter((item) => item.is_active).length, limit: 100 });
+  const { count, error: countError } = await supabase.from("competitors").select("id", { count: "exact", head: true }).eq("owner_id", user.id).eq("is_active", true).eq("ai_production_status", "qualified");
+  if (countError) return NextResponse.json({ error: "Unable to count active competitors.", details: countError.message }, { status: 500 });
+  return NextResponse.json({ competitors: data ?? [], activeCount: count ?? 0, limit: 100 });
 }
 
 export async function PATCH(request: NextRequest) {
@@ -36,7 +38,7 @@ export async function PATCH(request: NextRequest) {
       return NextResponse.json({ error: "Invalid AI-production review status." }, { status: 400 });
     }
     const { data: current, error: currentError } = await supabase.from("competitors")
-      .select("is_active").eq("id", body.id).eq("owner_id", user.id).maybeSingle();
+      .select("is_active,ai_production_status").eq("id", body.id).eq("owner_id", user.id).maybeSingle();
     if (currentError || !current) return NextResponse.json({ error: "Competitor not found." }, { status: 404 });
     if (body.ai_production_status === "qualified" && !current.is_active) {
       const { count, error: countError } = await supabase.from("competitors")
@@ -69,10 +71,11 @@ export async function PATCH(request: NextRequest) {
   }
 
   if (body.is_active) {
-    const { count, error: countError } = await supabase.from("competitors").select("id", { count: "exact", head: true }).eq("is_active", true);
-    if (countError) return NextResponse.json({ error: "Could not verify active competitor limit." }, { status: 500 });
-    const { data: current, error: currentError } = await supabase.from("competitors").select("is_active").eq("id", body.id).eq("owner_id", user.id).maybeSingle();
+    const { data: current, error: currentError } = await supabase.from("competitors").select("is_active,ai_production_status").eq("id", body.id).eq("owner_id", user.id).maybeSingle();
     if (currentError || !current) return NextResponse.json({ error: "Competitor not found." }, { status: 404 });
+    if (current.ai_production_status !== "qualified") return NextResponse.json({ error: "Approve this channel first. Only approved channels can be activated." }, { status: 409 });
+    const { count, error: countError } = await supabase.from("competitors").select("id", { count: "exact", head: true }).eq("owner_id", user.id).eq("is_active", true).eq("ai_production_status", "qualified");
+    if (countError) return NextResponse.json({ error: "Could not verify active competitor limit." }, { status: 500 });
     if (!current.is_active && (count ?? 0) >= 100) return NextResponse.json({ error: "You have reached the 100 active competitor limit." }, { status: 409 });
   }
 
