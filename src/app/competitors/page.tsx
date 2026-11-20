@@ -22,7 +22,12 @@ type Competitor = {
   ai_production_evidence: { sampleVideos?: SampleVideo[]; aiScreening?: AIScreening } | null;
   ai_production_review_note: string | null;
 };
-type DiscoveryResult = { saved?: number; channelsDiscovered?: number };
+type DiscoveryQuotaBucket = { remaining: number };
+type DiscoveryResult = {
+  saved?: number;
+  channelsDiscovered?: number;
+  quota?: { search?: DiscoveryQuotaBucket; general?: DiscoveryQuotaBucket } | null;
+};
 type ScreenResponse = { error?: string; screening?: AIScreening };
 
 const defaultKeywords = [
@@ -185,7 +190,7 @@ export default function CompetitorExplorerPage() {
     </section>
 
     {error && <div className="mb-4 flex items-start gap-2 rounded-lg border border-red-500/30 bg-red-500/10 p-3 text-sm text-red-300"><AlertCircle size={16} className="mt-0.5 shrink-0"/><span>{error}</span></div>}
-    {notice && <div className="mb-4 rounded-lg border border-emerald-500/20 bg-emerald-500/10 p-3 text-sm text-emerald-300">{notice}{lastDiscovery?.quota && <div className="mt-1 text-xs text-emerald-200/70">Search quota remaining: {lastDiscovery.quota.search.remaining} · General units remaining: {lastDiscovery.quota.general.remaining}</div>}</div>}
+    {notice && <div className="mb-4 rounded-lg border border-emerald-500/20 bg-emerald-500/10 p-3 text-sm text-emerald-300">{notice}{lastDiscovery?.quota?.search && lastDiscovery.quota.general && <div className="mt-1 text-xs text-emerald-200/70">Search quota remaining: {lastDiscovery.quota.search.remaining} · General units remaining: {lastDiscovery.quota.general.remaining}</div>}</div>}
 
     <section className="overflow-hidden rounded-xl border border-slate-800 bg-[#111925]">
       <div className="flex flex-col justify-between gap-3 border-b border-slate-800 p-4 md:flex-row md:items-center"><div><h2 className="text-sm font-semibold">Tracked channels</h2><p className="mt-1 text-xs text-slate-400">Pause channels to free active slots without deleting their records.</p></div><div className="flex flex-wrap gap-2"><div className="relative"><Search size={14} className="absolute left-3 top-2.5 text-slate-500"/><input value={search} onChange={(event)=>setSearch(event.target.value)} placeholder="Find channel..." className="w-full rounded-lg border border-slate-700 bg-[#0b121d] py-2 pl-8 pr-3 text-xs outline-none focus:border-cyan-500 sm:w-52"/></div><select value={filter} onChange={(event)=>setFilter(event.target.value as typeof filter)} className="rounded-lg border border-slate-700 bg-[#0b121d] px-3 py-2 text-xs"><option value="all">All channels</option><option value="active">Active</option><option value="paused">Paused</option></select></div></div>
