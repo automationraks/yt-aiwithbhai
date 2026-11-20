@@ -10,7 +10,7 @@ create table if not exists public.architecture_trends (
 );
 alter table public.content_ideas add column if not exists source_references jsonb not null default '[]'::jsonb;
 alter table public.content_ideas add column if not exists idea_key text;
-create unique index if not exists content_ideas_owner_idea_key_idx on public.content_ideas(owner_id,idea_key) where idea_key is not null;
+create unique index if not exists content_ideas_owner_idea_key_idx on public.content_ideas(owner_id,idea_key);
 alter table public.architecture_trends enable row level security;
 drop policy if exists owner_all on public.architecture_trends;
 create policy owner_all on public.architecture_trends for all using(owner_id=auth.uid()) with check(owner_id=auth.uid());
