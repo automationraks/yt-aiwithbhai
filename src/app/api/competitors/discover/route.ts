@@ -30,6 +30,7 @@ type YouTubeChannel = {
 
 
 type Assessment = { channelId: string; confidenceScore: number; nicheRelevance: number; recommendation: string; reason: string; evidence: string[] };
+type RejectedLearningExample = { channelTitle: string; description: string | null; reviewNote: string | null; confidenceScore?: number; nicheRelevance?: number };
 const assessmentRules = "You are a strict channel research analyst for AIWithBh@i. Target: technical education and real-world case studies about AI systems for IT professionals: AI system design, LLM application architecture, RAG, vector databases, AI agents/orchestration, production AI engineering, inference/model serving, AI infrastructure, evaluation, observability, reliability, security and enterprise AI implementations. Official channels from Anthropic, Meta, Groq, OpenAI, DeepSeek, AWS, Databricks, Snowflake, NVIDIA, Palantir, CrowdStrike, Apple, Alphabet/Google and Tesla can qualify as primary sources only when their sample videos directly cover their AI technology, engineering, research or implementation. Reject children's entertainment, nursery rhymes, songs, gaming, lifestyle, generic entertainment, unrelated tutorials and channels with only incidental AI mentions. Never infer fit from subscriber count or channel name alone. For each channel provide confidenceScore 0-100 (confidence it genuinely fits), nicheRelevance 0-100, recommendation strong_candidate/possible_candidate/unlikely_match, concise reason, and up to 3 evidence items. Be conservative: weak or ambiguous evidence must score 80 or below. Return ONLY JSON in this shape: {\"assessments\":[{\"channelId\":\"...\",\"confidenceScore\":0,\"nicheRelevance\":0,\"recommendation\":\"unlikely_match\",\"reason\":\"...\",\"evidence\":[\"...\"]}]}. Include every channelId exactly once.";
 function parseAssessments(raw: string, ids: string[]) {
  const cleaned=raw.replace(/^```(?:json)?\s*/i,"").replace(/\s*```$/,"").trim();
@@ -41,7 +42,7 @@ function parseAssessments(raw: string, ids: string[]) {
  }
  return map;
 }
-async function screenDiscoveryChannels(channels: YouTubeChannel[], samples: Map<string,SampleVideo[]>) {
+async function screenDiscoveryChannels(channels: YouTubeChannel[], samples: Map<string,SampleVideo[]>, rejectedExamples: RejectedLearningExample[]) {
  const config=getAIConfiguration();
  if(!config.configured) throw new Error("Configure GEMINI_API_KEY or GROQ_API_KEY. Automatic screening is required; no unassessed channels will be saved.");
  const limited=channels.slice(0,MAX_CHANNELS_PER_AI_SCREEN);
@@ -77,7 +78,7 @@ async function screenDiscoveryChannels(channels: YouTubeChannel[], samples: Map<
     matchedQuery:v.matchedQuery.slice(0,100)
    }))
   })).join("\n");
-  const prompt="Assess these "+chunk.length+" channels using only the compact public metadata below. Return every supplied channelId exactly once. Keep each reason under 35 words and evidence to at most 2 short items.\n"+content;
+  const learningContext = rejectedExamples.length ? "\n\nUSER-REJECTED EXAMPLES FROM PREVIOUS REVIEWS (learn the exclusion patterns):\n" + JSON.stringify(rejectedExamples) + "\nUse these as negative examples. Identify recurring traits that explain why they do not fit AI systems architecture education for IT professionals. Apply those traits to new candidates when the evidence supports it. Do not reject a candidate merely because it shares a company, tool, or broad topic; judge its actual channel and sample-video content. Exact previously rejected channel IDs are excluded before screening." : "";\n  const prompt="Assess these "+chunk.length+" channels using only the compact public metadata below. Return every supplied channelId exactly once. Keep each reason under 35 words and evidence to at most 2 short items. Be consistent with the prior user rejection examples when relevant.\n"+content+learningContext;
   let result:{assessments:Map<string,Assessment>;provider:string};
   try {
    if(config.primary==="groq"&&config.available.includes("groq")) result=await callGroq(prompt,ids);
@@ -183,10 +184,30 @@ export async function POST(request: NextRequest) {
       channels.push(...(result.items ?? []));
     }
 
+    // Load the user's prior rejected decisions as persistent negative feedback.
+    const { data: rejectedRows, error: rejectedError } = await supabase.from("competitors")
+      .select("youtube_channel_id,channel_title,description,ai_production_review_note,ai_production_evidence")
+      .eq("owner_id", user.id).eq("ai_production_status", "rejected")
+      .order("ai_production_reviewed_at", { ascending: false }).limit(30);
+    if (rejectedError) return NextResponse.json({ error: "Could not load prior rejection feedback.", details: rejectedError.message }, { status: 500 });
+
+    const rejectedIds = new Set((rejectedRows ?? []).map((row) => row.youtube_channel_id));
+    const rejectedExamples: RejectedLearningExample[] = (rejectedRows ?? []).slice(0, 12).map((row) => {
+      const evidence = row.ai_production_evidence && typeof row.ai_production_evidence === "object"
+        ? row.ai_production_evidence as Record<string, unknown> : {};
+      return {
+        channelTitle: row.channel_title,
+        description: typeof row.description === "string" ? row.description.slice(0, 220) : null,
+        reviewNote: typeof row.ai_production_review_note === "string" ? row.ai_production_review_note.slice(0, 180) : null,
+        confidenceScore: typeof evidence.confidenceScore === "number" ? evidence.confidenceScore : undefined,
+        nicheRelevance: typeof evidence.nicheRelevance === "number" ? evidence.nicheRelevance : undefined,
+      };
+    });
+
     const candidates = channels
-      .filter((channel) => channel.id && channel.snippet?.title)
+      .filter((channel) => channel.id && channel.snippet?.title && !rejectedIds.has(channel.id))
       .sort((a, b) => (samplesByChannel.get(b.id)?.length ?? 0) - (samplesByChannel.get(a.id)?.length ?? 0));
-    const { assessments, provider: screeningProvider } = await screenDiscoveryChannels(candidates, samplesByChannel);
+    const { assessments, provider: screeningProvider } = await screenDiscoveryChannels(candidates, samplesByChannel, rejectedExamples);
     const eligible = candidates.filter((channel) => {
       const assessment = assessments.get(channel.id);
       return Boolean(assessment && assessment.confidenceScore >= MIN_DISCOVERY_SCORE && assessment.nicheRelevance >= MIN_DISCOVERY_SCORE && assessment.recommendation === "strong_candidate");
@@ -261,7 +282,7 @@ export async function POST(request: NextRequest) {
     const { data: quota } = await supabase.rpc("get_youtube_quota_status");
     return NextResponse.json({
       searchedKeywords: keywords, language, channelsDiscovered: channelIds.size,
-      channelsAIassessed: assessments.size,
+      channelsAIassessed: assessments.size,\n      priorRejectedExamplesUsed: rejectedExamples.length,\n      previouslyRejectedChannelsSkipped: rejectedIds.size,
       channelsPassingConfidenceThreshold: eligible.length,
       minimumConfidenceScore: MIN_DISCOVERY_SCORE,
       minimumNicheRelevance: MIN_DISCOVERY_SCORE,
