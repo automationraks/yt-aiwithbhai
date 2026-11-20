@@ -7,7 +7,8 @@ export const dynamic = "force-dynamic";
 
 const YOUTUBE_API = "https://www.googleapis.com/youtube/v3";
 const MAX_ACTIVE_COMPETITORS = 100;
-const MAX_CHANNELS_PER_AI_SCREEN = 60;
+const MAX_CHANNELS_PER_AI_SCREEN = 8;
+const AI_SCREEN_BATCH_SIZE = 2;
 const MIN_DISCOVERY_SCORE = 81;
 
 type QuotaReservation = { allowed: boolean; bucket: string; used: number; limit: number; remaining: number; resetAt: string; quotaDate: string };
@@ -43,32 +44,54 @@ function parseAssessments(raw: string, ids: string[]) {
 async function screenDiscoveryChannels(channels: YouTubeChannel[], samples: Map<string,SampleVideo[]>) {
  const config=getAIConfiguration();
  if(!config.configured) throw new Error("Configure GEMINI_API_KEY or GROQ_API_KEY. Automatic screening is required; no unassessed channels will be saved.");
- const batch=channels.slice(0,MAX_CHANNELS_PER_AI_SCREEN), ids=batch.map(c=>c.id);
- const content=batch.map(c=>JSON.stringify({channelId:c.id,title:c.snippet?.title??"",description:(c.snippet?.description??"").slice(0,1200),sampleVideos:(samples.get(c.id)??[]).slice(0,5).map(v=>({title:v.title,description:v.description.slice(0,500),matchedQuery:v.matchedQuery}))})).join("\n");
- const prompt="Assess all channels below using supplied public metadata only. Return every channelId exactly.\n"+content;
- const gemini=async()=>{
+ const limited=channels.slice(0,MAX_CHANNELS_PER_AI_SCREEN);
+ const combined=new Map<string,Assessment>();
+ let providerUsed="";
+ const chunks: YouTubeChannel[][]=[];
+ for(let i=0;i<limited.length;i+=AI_SCREEN_BATCH_SIZE) chunks.push(limited.slice(i,i+AI_SCREEN_BATCH_SIZE));
+
+ const callGemini=async(prompt:string,ids:string[])=>{
   const model=process.env.GEMINI_MODEL||"gemini-2.5-flash-lite";
-  const res=await fetch("https://generativelanguage.googleapis.com/v1beta/models/"+model+":generateContent",{method:"POST",headers:{"Content-Type":"application/json","x-goog-api-key":process.env.GEMINI_API_KEY!},body:JSON.stringify({systemInstruction:{parts:[{text:assessmentRules}]},contents:[{role:"user",parts:[{text:prompt}]}],generationConfig:{responseMimeType:"application/json",temperature:0.1,maxOutputTokens:8192}}),signal:AbortSignal.timeout(60000)});
+  const res=await fetch("https://generativelanguage.googleapis.com/v1beta/models/"+model+":generateContent",{method:"POST",headers:{"Content-Type":"application/json","x-goog-api-key":process.env.GEMINI_API_KEY!},body:JSON.stringify({systemInstruction:{parts:[{text:assessmentRules}]},contents:[{role:"user",parts:[{text:prompt}]}],generationConfig:{responseMimeType:"application/json",temperature:0.1,maxOutputTokens:2048}}),signal:AbortSignal.timeout(60000)});
   const data=await res.json().catch(()=>({})); if(!res.ok) throw new Error(data?.error?.message||"Gemini screening failed.");
   const out=data?.candidates?.[0]?.content?.parts?.map((p:{text?:string})=>p.text??"").join(""); if(!out) throw new Error("Gemini returned an empty screening result.");
   return {assessments:parseAssessments(out,ids),provider:model};
  };
- const groq=async()=>{
+ const callGroq=async(prompt:string,ids:string[])=>{
   const model=process.env.GROQ_MODEL||"openai/gpt-oss-120b";
-  const res=await fetch("https://api.groq.com/openai/v1/chat/completions",{method:"POST",headers:{"Content-Type":"application/json",Authorization:"Bearer "+process.env.GROQ_API_KEY!},body:JSON.stringify({model,temperature:0.1,response_format:{type:"json_object"},messages:[{role:"system",content:assessmentRules},{role:"user",content:prompt}]}),signal:AbortSignal.timeout(60000)});
+  const res=await fetch("https://api.groq.com/openai/v1/chat/completions",{method:"POST",headers:{"Content-Type":"application/json",Authorization:"Bearer "+process.env.GROQ_API_KEY!},body:JSON.stringify({model,temperature:0.1,max_tokens:1200,response_format:{type:"json_object"},messages:[{role:"system",content:assessmentRules},{role:"user",content:prompt}]}),signal:AbortSignal.timeout(60000)});
   const data=await res.json().catch(()=>({})); if(!res.ok) throw new Error(data?.error?.message||"Groq screening failed.");
   const out=data?.choices?.[0]?.message?.content; if(!out) throw new Error("Groq returned an empty screening result.");
   return {assessments:parseAssessments(out,ids),provider:model};
  };
- try {
-  if(config.primary==="groq"&&config.available.includes("groq")) return await groq();
-  if(config.available.includes("gemini")) return await gemini();
-  return await groq();
- } catch(err) {
-  const fallback=config.primary==="gemini"?"groq":"gemini";
-  if(!config.available.includes(fallback)) throw err;
-  return fallback==="groq"?await groq():await gemini();
+
+ for(const chunk of chunks) {
+  const ids=chunk.map(c=>c.id);
+  const content=chunk.map(c=>JSON.stringify({
+   channelId:c.id,
+   title:(c.snippet?.title??"").slice(0,160),
+   description:(c.snippet?.description??"").slice(0,500),
+   sampleVideos:(samples.get(c.id)??[]).slice(0,2).map(v=>({
+    title:v.title.slice(0,180),
+    description:v.description.slice(0,180),
+    matchedQuery:v.matchedQuery.slice(0,100)
+   }))
+  })).join("\n");
+  const prompt="Assess these "+chunk.length+" channels using only the compact public metadata below. Return every supplied channelId exactly once. Keep each reason under 35 words and evidence to at most 2 short items.\n"+content;
+  let result:{assessments:Map<string,Assessment>;provider:string};
+  try {
+   if(config.primary==="groq"&&config.available.includes("groq")) result=await callGroq(prompt,ids);
+   else if(config.available.includes("gemini")) result=await callGemini(prompt,ids);
+   else result=await callGroq(prompt,ids);
+  } catch(firstError) {
+   const fallback=config.primary==="gemini"?"groq":"gemini";
+   if(!config.available.includes(fallback)) throw firstError;
+   result=fallback==="groq"?await callGroq(prompt,ids):await callGemini(prompt,ids);
+  }
+  providerUsed=result.provider;
+  for(const [id,assessment] of result.assessments) combined.set(id,assessment);
  }
+ return {assessments:combined,provider:providerUsed};
 }
 
 async function reserveQuota(supabase: Awaited<ReturnType<typeof createSupabaseServerClient>>, bucket: "search" | "general") {
