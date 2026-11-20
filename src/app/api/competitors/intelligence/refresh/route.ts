@@ -46,7 +46,7 @@ export async function POST() {
   if (!process.env.YOUTUBE_API_KEY) return NextResponse.json({ error: "YOUTUBE_API_KEY is not configured." }, { status: 503 });
 
   const { data: competitors, error } = await supabase.from("competitors")
-    .select("id,youtube_channel_id,channel_title")
+    .select("id,youtube_channel_id,channel_title,ai_production_evidence")
     .eq("owner_id", user.id).eq("is_active", true).eq("ai_production_status", "qualified")
     .order("last_checked_at", { ascending: true, nullsFirst: true }).limit(BATCH_SIZE);
   if (error) return NextResponse.json({ error: "Could not load qualified competitors.", details: error.message }, { status: 500 });
@@ -59,6 +59,16 @@ export async function POST() {
     });
     const channelMap = new Map((channelResult.items ?? []).map((item) => [item.id, item]));
     const samples: Array<{ channel: typeof competitors[number]; videoId: string } > = [];
+    // Creator Explorer's niche-matched sampleVideos are the priority video source.
+    // Keep their channel association so Analytics can distinguish recommendations from ordinary uploads.
+    for (const competitor of competitors) {
+      const evidence = competitor.ai_production_evidence && typeof competitor.ai_production_evidence === "object"
+        ? competitor.ai_production_evidence as { sampleVideos?: Array<{ videoId?: string | null }> }
+        : {};
+      for (const sample of evidence.sampleVideos ?? []) {
+        if (sample.videoId) samples.push({ channel: competitor, videoId: sample.videoId });
+      }
+    }
 
     for (const competitor of competitors) {
       const uploads = channelMap.get(competitor.youtube_channel_id)?.contentDetails?.relatedPlaylists?.uploads;
