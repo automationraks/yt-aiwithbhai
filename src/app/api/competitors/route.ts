@@ -45,14 +45,22 @@ export async function PATCH(request: NextRequest) {
       if ((count ?? 0) >= 100) return NextResponse.json({ error: "100 active competitor slots are already in use. Pause one before qualifying another channel." }, { status: 409 });
     }
     const note = typeof body.ai_production_review_note === "string" ? body.ai_production_review_note.slice(0, 1000) : null;
+    const actionAt = new Date().toISOString();
+    const action = body.ai_production_status === "qualified" ? "qualified" : body.ai_production_status === "rejected" ? "rejected" : "reset_to_review";
+    const shouldTrack = body.ai_production_status === "qualified";
     const { data, error } = await supabase.from("competitors").update({
       ai_production_status: body.ai_production_status,
-      ai_production_reviewed_at: new Date().toISOString(),
+      ai_production_reviewed_at: actionAt,
       ai_production_review_note: note,
-      is_active: body.ai_production_status === "qualified",
-    }).eq("id", body.id).eq("owner_id", user.id).select("id,is_active,ai_production_status,ai_production_reviewed_at,ai_production_review_note").maybeSingle();
+      user_tracking_preference: shouldTrack,
+      last_user_action: action,
+      last_user_action_at: actionAt,
+      is_active: shouldTrack,
+    }).eq("id", body.id).eq("owner_id", user.id).select("id,is_active,ai_production_status,ai_production_reviewed_at,ai_production_review_note,user_tracking_preference,last_user_action,last_user_action_at").maybeSingle();
     if (error) return NextResponse.json({ error: "Could not save AI-production review.", details: error.message }, { status: 500 });
     if (!data) return NextResponse.json({ error: "Competitor not found." }, { status: 404 });
+    const { error: logError } = await supabase.from("competitor_action_log").insert({ owner_id: user.id, competitor_id: data.id, action, details: { note, is_active: data.is_active } });
+    if (logError) return NextResponse.json({ error: "Review saved, but action history could not be recorded.", details: logError.message }, { status: 500 });
     return NextResponse.json({ competitor: data });
   }
 
@@ -68,9 +76,15 @@ export async function PATCH(request: NextRequest) {
     if (!current.is_active && (count ?? 0) >= 100) return NextResponse.json({ error: "You have reached the 100 active competitor limit." }, { status: 409 });
   }
 
-  const { data, error } = await supabase.from("competitors").update({ is_active: body.is_active })
-    .eq("id", body.id).eq("owner_id", user.id).select("id,is_active").maybeSingle();
+  const actionAt = new Date().toISOString();
+  const action = body.is_active ? "tracking_resumed" : "tracking_paused";
+  const { data, error } = await supabase.from("competitors").update({
+    is_active: body.is_active, user_tracking_preference: body.is_active,
+    last_user_action: action, last_user_action_at: actionAt,
+  }).eq("id", body.id).eq("owner_id", user.id).select("id,is_active,user_tracking_preference,last_user_action,last_user_action_at").maybeSingle();
   if (error) return NextResponse.json({ error: "Could not update competitor.", details: error.message }, { status: 500 });
   if (!data) return NextResponse.json({ error: "Competitor not found." }, { status: 404 });
+  const { error: logError } = await supabase.from("competitor_action_log").insert({ owner_id: user.id, competitor_id: data.id, action, details: { is_active: data.is_active } });
+  if (logError) return NextResponse.json({ error: "Tracking updated, but action history could not be saved.", details: logError.message }, { status: 500 });
   return NextResponse.json({ competitor: data });
 }
