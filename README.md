@@ -18,7 +18,26 @@ AI-powered YouTube research and content operations workspace for the existing **
 - Evaluation, observability, reliability, security and governance
 - Real-world AI architecture case studies
 
-### Research rules
+### Global AI intelligence and model watchlist
+
+The research radar's source registry covers frontier models, hardware and inference, cloud AI, open-weight ecosystems, developer infrastructure and research papers. The model watchlist includes GPT, Claude, Gemini, Grok, Kimi, DeepSeek, Qwen, GLM, MiniMax, Llama, Mistral, Command, Granite, Nemotron, Phi, Seed, ERNIE and Hunyuan. This is an extensible editorial watchlist, not a claim that every family has a working RSS feed or that every listed model is the newest release.
+
+Some publishers expose RSS/Atom while others only expose web pages or release feeds. Feed availability must be checked; an unavailable feed is not evidence that a provider has no news. Prefer official announcements, documentation, papers and repositories.
+
+## Case-study-first editorial strategy
+
+The channel's main output is technical case studies, not headline summaries. Evaluate each trend for:
+- Architecture breakdown: components, data flow, model serving and orchestration.
+- Engineering deep dive: training, fine-tuning, inference, evaluation and reliability.
+- Product/business case study: use case, adoption, trade-offs and measurable outcomes.
+- Model/platform comparison: capability, cost, latency, quality, privacy and openness.
+- Open-source implementation: repository, licence, deployment and reproducibility.
+- Failure analysis: incidents, security, limitations and engineering lessons.
+- Research-to-production: translate papers into practical implementation and explain what remains unproven.
+
+Each case study should collect the original announcement or paper, primary documentation, code/repository and independent corroboration where possible. Separate confirmed facts, vendor claims, benchmark results and editorial analysis. Never invent performance metrics or imply that a demo is production-ready.
+
+## Research rules
 Find creators who teach technical AI systems engineering. Do not classify channels as relevant merely because they discuss AI news, AI tools or prompt engineering. Review multiple videos for technical depth, accuracy, practical implementation and relevance to software/IT professionals.
 
 ## Existing stack retained
