@@ -4,15 +4,26 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { ArrowLeft, ExternalLink, Loader2, Search, Target, Users, RefreshCw, Power, AlertCircle, Sparkles } from "lucide-react";
 
+type AIScreening = {
+  recommendation?: string;
+  industrialRelevance?: number;
+  facelessFormatLikelihood?: number;
+  syntheticVisualStyleLikelihood?: number;
+  narrationEvidence?: string;
+  evidence?: string[];
+};
+type SampleVideo = { title: string; videoUrl: string | null; thumbnailUrl: string | null; matchedQuery: string };
 type Competitor = {
   id: string; youtube_channel_id: string; channel_title: string; channel_url: string | null;
   published_at: string | null; country: string | null; language: string | null;
   subscriber_count: number | string | null; video_count: number | string | null;
   view_count: number | string | null; is_active: boolean;
   ai_production_status: "needs_review" | "qualified" | "rejected";
-  ai_production_evidence: { sampleVideos?: Array<{ title: string; videoUrl: string | null; thumbnailUrl: string | null; matchedQuery: string }>; aiScreening?: Record<string, any> } | null;
+  ai_production_evidence: { sampleVideos?: SampleVideo[]; aiScreening?: AIScreening } | null;
   ai_production_review_note: string | null;
 };
+type DiscoveryResult = { saved?: number; channelsDiscovered?: number };
+type ScreenResponse = { error?: string; screening?: AIScreening };
 
 const defaultKeywords = [
   "AI system design for software engineers",
@@ -54,9 +65,9 @@ export default function CompetitorExplorerPage() {
   const [updatingId, setUpdatingId] = useState<string | null>(null);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
-  const [lastDiscovery, setLastDiscovery] = useState<any>(null);
+  const [lastDiscovery, setLastDiscovery] = useState<DiscoveryResult | null>(null);
   const [screeningId, setScreeningId] = useState<string | null>(null);
-  const [screenResults, setScreenResults] = useState<Record<string, any>>({});
+  const [screenResults, setScreenResults] = useState<Record<string, AIScreening>>({});
 
   const loadCompetitors = useCallback(async () => {
     setLoading(true); setError("");
@@ -105,7 +116,7 @@ export default function CompetitorExplorerPage() {
         body: JSON.stringify({ id: item.id }),
       });
       const responseText = await response.text();
-      let result: any = {};
+      let result: ScreenResponse = {};
       if (responseText.trim()) {
         try { result = JSON.parse(responseText); }
         catch { throw new Error(`AI screening returned an invalid response (HTTP ${response.status}): ${responseText.slice(0, 300)}`); }
@@ -114,7 +125,7 @@ export default function CompetitorExplorerPage() {
       }
       if (!response.ok) throw new Error(result.error || `AI screening failed (HTTP ${response.status}).`);
       if (!result.screening) throw new Error("The screening API response did not contain an assessment.");
-      setScreenResults((current) => ({ ...current, [item.id]: result.screening }));
+      setScreenResults((current) => ({ ...current, [item.id]: result.screening as AIScreening }));
       setNotice("Creator assessment completed for " + item.channel_title + ". Review the evidence before making a manual decision.");
     } catch (err) { setError(err instanceof Error ? err.message : "AI screening failed."); }
     finally { setScreeningId(null); }
