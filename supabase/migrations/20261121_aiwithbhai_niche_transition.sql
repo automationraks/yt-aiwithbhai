@@ -1,5 +1,20 @@
 -- AIWithBh@i niche transition: retain historic records but pause legacy industrial-manufacturing candidates.
--- Review every saved channel against the new AI systems architecture and engineering education niche.
+-- Update the existing channel profile without changing the connected YouTube channel ID.
+update public.channel_profile
+set
+  channel_name = 'AIWithBh@i',
+  language = 'en',
+  niche = 'AI Systems Architecture and Engineering Education for IT Professionals',
+  updated_at = now();
+
+-- Pause legacy industrial/manufacturing seed terms. The new starter-keyword action
+-- adds AI systems design, LLM, RAG, agents and production AI terms.
+update public.keyword_library
+set is_active = false
+where lower(coalesce(category,'')) in ('ai faceless format','industrial manufacturing','industrial engineering');
+
+-- Existing competitor records are retained for audit/history but cannot influence the new niche ranking
+-- until manually re-reviewed and qualified.
 update public.competitors
 set
   is_active = false,
