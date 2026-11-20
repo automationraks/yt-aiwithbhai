@@ -19,7 +19,7 @@ export async function GET() {
   const ids = competitors.map((item) => item.id);
   const [channelHistory, videoRows] = await Promise.all([
     supabase.from("competitor_snapshots").select("competitor_id,subscriber_count,view_count,captured_at").in("competitor_id", ids).order("captured_at", { ascending: false }),
-    supabase.from("videos").select("id,competitor_id,youtube_video_id,title,description,view_count,published_at,is_short,video_url,thumbnail_url").in("competitor_id", ids).order("published_at", { ascending: false }),
+    supabase.from("videos").select("id,competitor_id,youtube_video_id,title,description,view_count,published_at,is_short,video_url,thumbnail_url").in("competitor_id", ids).eq("is_niche_relevant", true).order("published_at", { ascending: false }),
   ]);
   if (channelHistory.error || videoRows.error) return NextResponse.json({ error: "Could not load analytics history.", details: channelHistory.error?.message ?? videoRows.error?.message }, { status: 500 });
 
