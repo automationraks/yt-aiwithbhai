@@ -8,7 +8,7 @@ export const dynamic = "force-dynamic";
 const YOUTUBE_API = "https://www.googleapis.com/youtube/v3";
 const MAX_ACTIVE_COMPETITORS = 100;
 const MAX_CHANNELS_PER_AI_SCREEN = 8;
-const AI_SCREEN_BATCH_SIZE = 2;
+const AI_SCREEN_BATCH_SIZE = 1;
 const MIN_DISCOVERY_SCORE = 81;
 
 type QuotaReservation = { allowed: boolean; bucket: string; used: number; limit: number; remaining: number; resetAt: string; quotaDate: string };
@@ -60,8 +60,20 @@ async function screenDiscoveryChannels(channels: YouTubeChannel[], samples: Map<
  };
  const callGroq=async(prompt:string,ids:string[])=>{
   const model=process.env.GROQ_MODEL||"openai/gpt-oss-120b";
-  const res=await fetch("https://api.groq.com/openai/v1/chat/completions",{method:"POST",headers:{"Content-Type":"application/json",Authorization:"Bearer "+process.env.GROQ_API_KEY!},body:JSON.stringify({model,temperature:0.1,max_tokens:1200,response_format:{type:"json_object"},messages:[{role:"system",content:assessmentRules},{role:"user",content:prompt}]}),signal:AbortSignal.timeout(60000)});
-  const data=await res.json().catch(()=>({})); if(!res.ok) throw new Error(data?.error?.message||"Groq screening failed.");
+  let res: Response;
+  let data: any = {};
+  for (let attempt = 0; attempt < 2; attempt++) {
+   res=await fetch("https://api.groq.com/openai/v1/chat/completions",{method:"POST",headers:{"Content-Type":"application/json",Authorization:"Bearer "+process.env.GROQ_API_KEY!},body:JSON.stringify({model,temperature:0.1,max_tokens:500,response_format:{type:"json_object"},messages:[{role:"system",content:assessmentRules},{role:"user",content:prompt}]}),signal:AbortSignal.timeout(60000)});
+   data=await res.json().catch(()=>({}));
+   if(res.ok) break;
+   if(res.status!==429 || attempt===1) {
+    const error=new Error(data?.error?.message||"Groq screening failed ("+res.status+").") as Error & {status?:number;retryAfter?:string};
+    error.status=res.status; error.retryAfter=res.headers.get("retry-after")||undefined; throw error;
+   }
+   const retryAfter=Number(res.headers.get("retry-after")||"10");
+   const delay=Number.isFinite(retryAfter)&&retryAfter>0?Math.min(retryAfter,30):10;
+   await new Promise(resolve=>setTimeout(resolve,delay*1000));
+  }
   const out=data?.choices?.[0]?.message?.content; if(!out) throw new Error("Groq returned an empty screening result.");
   return {assessments:parseAssessments(out,ids),provider:model};
  };
@@ -72,14 +84,14 @@ async function screenDiscoveryChannels(channels: YouTubeChannel[], samples: Map<
    channelId:c.id,
    title:(c.snippet?.title??"").slice(0,160),
    description:(c.snippet?.description??"").slice(0,500),
-   sampleVideos:(samples.get(c.id)??[]).slice(0,2).map(v=>({
-    title:v.title.slice(0,180),
-    description:v.description.slice(0,180),
-    matchedQuery:v.matchedQuery.slice(0,100)
+   sampleVideos:(samples.get(c.id)??[]).slice(0,1).map(v=>({
+    title:v.title.slice(0,120),
+    description:v.description.slice(0,80),
+    matchedQuery:v.matchedQuery.slice(0,60)
    }))
   })).join("\n");
   const learningContext = rejectedExamples.length ? "\n\nUSER-REJECTED EXAMPLES FROM PREVIOUS REVIEWS (learn the exclusion patterns):\n" + JSON.stringify(rejectedExamples) + "\nUse these as negative examples. Identify recurring traits that explain why they do not fit AI tools/technology coverage or practical AI system design education. Apply those traits to new candidates only when supported by evidence. Do not reject a candidate merely because it shares a company, tool, or broad topic; judge actual content. Exact previously rejected channel IDs are excluded before screening." : "";
-  const prompt="Assess these "+chunk.length+" channels using only the compact public metadata below. Return every supplied channelId exactly once. Keep each reason under 35 words and evidence to at most 2 short items. Be consistent with the prior user rejection examples when relevant.\n"+content+learningContext;
+  const prompt="Assess these "+chunk.length+" channels using only the compact public metadata below. Return every supplied channelId exactly once. Keep each reason under 20 words and evidence to at most 1 short item. Be consistent with the prior user rejection examples when relevant.\n"+content+learningContext;
   let result:{assessments:Map<string,Assessment>;provider:string};
   try {
    if(config.primary==="groq"&&config.available.includes("groq")) result=await callGroq(prompt,ids);
@@ -191,13 +203,13 @@ export async function POST(request: NextRequest) {
     if (rejectedError) return NextResponse.json({ error: "Could not load prior rejection feedback.", details: rejectedError.message }, { status: 500 });
 
     const rejectedIds = new Set((rejectedRows ?? []).map((row) => row.youtube_channel_id));
-    const rejectedExamples: RejectedLearningExample[] = (rejectedRows ?? []).slice(0, 12).map((row) => {
+    const rejectedExamples: RejectedLearningExample[] = (rejectedRows ?? []).slice(0, 4).map((row) => {
       const evidence = row.ai_production_evidence && typeof row.ai_production_evidence === "object"
         ? row.ai_production_evidence as Record<string, unknown> : {};
       return {
-        channelTitle: row.channel_title,
-        description: typeof row.description === "string" ? row.description.slice(0, 220) : null,
-        reviewNote: typeof row.ai_production_review_note === "string" ? row.ai_production_review_note.slice(0, 180) : null,
+        channelTitle: row.channel_title.slice(0, 80),
+        description: typeof row.description === "string" ? row.description.slice(0, 100) : null,
+        reviewNote: typeof row.ai_production_review_note === "string" ? row.ai_production_review_note.slice(0, 80) : null,
         confidenceScore: typeof evidence.confidenceScore === "number" ? evidence.confidenceScore : undefined,
         nicheRelevance: typeof evidence.nicheRelevance === "number" ? evidence.nicheRelevance : undefined,
       };
@@ -275,6 +287,7 @@ export async function POST(request: NextRequest) {
       channelsWithinAgeRange: eligible.length, saved, candidatesSaved: saved, sampleEvidenceRefreshed: candidates.filter((channel) => (samplesByChannel.get(channel.id)?.length ?? 0) > 0).length, activeCompetitorCount: count ?? 0,
       activeCompetitorLimit: MAX_ACTIVE_COMPETITORS, ageFilter: "No channel-age restriction; global discovery.",
       screeningLimitPerRun: MAX_CHANNELS_PER_AI_SCREEN,
+      screeningBatchSize: AI_SCREEN_BATCH_SIZE,
       qualification: "Only strong candidates with confidence and niche relevance scores above 80 are saved. AI-production style still requires human verification.",
       quotaNote: "This dashboard tracks requests made through this app only. Other apps using the same Google Cloud project also consume its quota.",
       quota: quota ?? null,
