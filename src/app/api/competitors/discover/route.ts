@@ -56,16 +56,21 @@ async function screenDiscoveryChannels(channels: YouTubeChannel[], samples: Map<
   const res=await fetch("https://generativelanguage.googleapis.com/v1beta/models/"+model+":generateContent",{method:"POST",headers:{"Content-Type":"application/json","x-goog-api-key":process.env.GEMINI_API_KEY!},body:JSON.stringify({systemInstruction:{parts:[{text:assessmentRules}]},contents:[{role:"user",parts:[{text:prompt}]}],generationConfig:{responseMimeType:"application/json",temperature:0.1,maxOutputTokens:2048}}),signal:AbortSignal.timeout(60000)});
   const data=await res.json().catch(()=>({})); if(!res.ok) throw new Error(data?.error?.message||"Gemini screening failed.");
   const out=data?.candidates?.[0]?.content?.parts?.map((p:{text?:string})=>p.text??"").join(""); if(!out) throw new Error("Gemini returned an empty screening result.");
-  return {assessments:parseAssessments(out,ids),provider:model};
+  const assessments=parseAssessments(out,ids);
+  if(ids.some(id=>!assessments.has(id))) throw new Error("Gemini returned incomplete channel assessments; retry discovery.");
+  return {assessments,provider:model};
  };
  const callGroq=async(prompt:string,ids:string[])=>{
-  const model=process.env.GROQ_MODEL||"openai/gpt-oss-120b";
+  const model=process.env.GROQ_MODEL||"llama-3.3-70b-versatile";
   let res: Response;
   let data: any = {};
   for (let attempt = 0; attempt < 2; attempt++) {
-   res=await fetch("https://api.groq.com/openai/v1/chat/completions",{method:"POST",headers:{"Content-Type":"application/json",Authorization:"Bearer "+process.env.GROQ_API_KEY!},body:JSON.stringify({model,temperature:0.1,max_tokens:500,response_format:{type:"json_object"},messages:[{role:"system",content:assessmentRules},{role:"user",content:prompt}]}),signal:AbortSignal.timeout(60000)});
+   const retryingWithoutJsonMode = attempt === 1;
+   res=await fetch("https://api.groq.com/openai/v1/chat/completions",{method:"POST",headers:{"Content-Type":"application/json",Authorization:"Bearer "+process.env.GROQ_API_KEY!},body:JSON.stringify({model,temperature:0.1,max_tokens:800,...(retryingWithoutJsonMode?{}:{response_format:{type:"json_object"}}),messages:[{role:"system",content:assessmentRules+" Output a valid JSON object only. No markdown or commentary."},{role:"user",content:prompt+"\nReturn exactly this JSON structure: {\\"assessments\\":[{\\"channelId\\":\\"ID\\",\\"confidenceScore\\":0,\\"nicheRelevance\\":0,\\"recommendation\\":\\"unlikely_match\\",\\"reason\\":\\"short reason\\",\\"evidence\\":[\\"one evidence item\\"]}]}"}]}),signal:AbortSignal.timeout(60000)});
    data=await res.json().catch(()=>({}));
    if(res.ok) break;
+   const errorText=String(data?.error?.message||"");
+   if(attempt===0 && res.status===400 && /failed_generation|failed to generate json/i.test(errorText)) continue;
    if(res.status!==429 || attempt===1) {
     const error=new Error(data?.error?.message||"Groq screening failed ("+res.status+").") as Error & {status?:number;retryAfter?:string};
     error.status=res.status; error.retryAfter=res.headers.get("retry-after")||undefined; throw error;
@@ -74,8 +79,11 @@ async function screenDiscoveryChannels(channels: YouTubeChannel[], samples: Map<
    const delay=Number.isFinite(retryAfter)&&retryAfter>0?Math.min(retryAfter,30):10;
    await new Promise(resolve=>setTimeout(resolve,delay*1000));
   }
-  const out=data?.choices?.[0]?.message?.content; if(!out) throw new Error("Groq returned an empty screening result.");
-  return {assessments:parseAssessments(out,ids),provider:model};
+  const out=data?.choices?.[0]?.message?.content;
+  if(!out) throw new Error("Groq returned an empty screening result.");
+  const assessments=parseAssessments(out,ids);
+  if(ids.some(id=>!assessments.has(id))) throw new Error("Groq returned incomplete channel assessments; retry discovery.");
+  return {assessments,provider:model};
  };
 
  for(const chunk of chunks) {
