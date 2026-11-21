@@ -94,12 +94,12 @@ async function screenDiscoveryChannels(channels: YouTubeChannel[], samples: Map<
   const prompt="Assess these "+chunk.length+" channels using only the compact public metadata below. Return every supplied channelId exactly once. Keep each reason under 20 words and evidence to at most 1 short item. Be consistent with the prior user rejection examples when relevant.\n"+content+learningContext;
   let result:{assessments:Map<string,Assessment>;provider:string};
   try {
-   if(config.primary==="groq"&&config.available.includes("groq")) result=await callGroq(prompt,ids);
-   else if(config.available.includes("gemini")) result=await callGemini(prompt,ids);
+   if(config.available.includes("gemini")) result=await callGemini(prompt,ids);
    else result=await callGroq(prompt,ids);
   } catch(firstError) {
-   const fallback=config.primary==="gemini"?"groq":"gemini";
+   const fallback=config.available.includes("gemini")?"groq":"gemini";
    if(!config.available.includes(fallback)) throw firstError;
+   // Gemini is preferred for discovery; Groq is a fallback only when Gemini is unavailable or fails.
    result=fallback==="groq"?await callGroq(prompt,ids):await callGemini(prompt,ids);
   }
   providerUsed=result.provider;
