@@ -63,9 +63,13 @@ export async function POST(req:NextRequest){
   const saved=await s.from("competitors").upsert(competitor,{onConflict:"owner_id,youtube_channel_id"}).select("id").single();
   if(saved.error)throw new Error("Could not promote channel: "+saved.error.message);
   const name=String(b.display_name??"").trim().slice(0,120)||title;
-  const{data,error}=await s.from("manual_tracked_channels").upsert({owner_id:user.id,platform:"youtube",url:x.url,display_name:name,is_active:true,youtube_channel_id:channelId,competitor_id:saved.data.id,monitoring_status:"queued",last_checked_at:now,next_check_at:now,last_error:null},{onConflict:"owner_id,platform,url"}).select("*").single();
-  if(error)throw new Error("Competitor promoted, but manual link save failed: "+error.message);
-  return NextResponse.json({item:data,channelTitle:title,priority:true});
+  const existingManual=await s.from("manual_tracked_channels").select("id").eq("owner_id",user.id).eq("platform","youtube").eq("youtube_channel_id",channelId).maybeSingle();
+  const manualPayload={owner_id:user.id,platform:"youtube",url:x.url,display_name:name,is_active:true,youtube_channel_id:channelId,competitor_id:saved.data.id,monitoring_status:"queued",last_checked_at:now,next_check_at:now,last_error:null};
+  const manualWrite=existingManual.data
+    ? await s.from("manual_tracked_channels").update(manualPayload).eq("id",existingManual.data.id).select("*").single()
+    : await s.from("manual_tracked_channels").upsert(manualPayload,{onConflict:"owner_id,platform,url"}).select("*").single();
+  if(manualWrite.error)throw new Error("Competitor promoted, but manual link save failed: "+manualWrite.error.message);
+  return NextResponse.json({item:manualWrite.data,channelTitle:title,priority:true});
  }catch(e){return NextResponse.json({error:e instanceof Error?e.message:"Could not add channel."},{status:502});}
 }
 export async function PATCH(req:NextRequest){
@@ -85,6 +89,6 @@ export async function DELETE(req:NextRequest){
  const id=req.nextUrl.searchParams.get("id");if(!id)return NextResponse.json({error:"id required"},{status:400});
  const{data:link}=await s.from("manual_tracked_channels").select("platform,competitor_id").eq("id",id).eq("owner_id",user.id).maybeSingle();
  const{error}=await s.from("manual_tracked_channels").delete().eq("id",id).eq("owner_id",user.id);if(error)return NextResponse.json({error:error.message},{status:500});
- if(link?.platform==="youtube"&&link.competitor_id)await s.from("competitors").update({is_manual_priority:false}).eq("id",link.competitor_id).eq("owner_id",user.id);
+ if(link?.platform==="youtube"&&link.competitor_id)await s.from("competitors").update({is_manual_priority:false,is_active:false,user_tracking_preference:false,last_user_action:"manual_priority_removed",last_user_action_at:new Date().toISOString()}).eq("id",link.competitor_id).eq("owner_id",user.id);
  return NextResponse.json({ok:true});
 }
