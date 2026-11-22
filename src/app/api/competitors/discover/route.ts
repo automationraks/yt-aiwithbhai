@@ -37,7 +37,8 @@ function asRecord(value: unknown): Record<string, unknown> {
 const assessmentRules = "You are a strict channel research analyst for AIWithBh@i. Discover BOTH (A) AI tools and technology coverage and (B) practical AI system design educators. Category A: timely, substantive coverage of newly released AI models, LLMs, APIs, developer tools, agent frameworks, orchestration platforms, coding assistants, inference providers, vector databases, evaluation/observability tools and cloud AI platforms. Include hands-on technical demos, comparisons, implementation guidance, release analysis and engineering implications; do not accept shallow hype, affiliate-only promotion or generic tool roundups. Category B (priority): scenario-driven system design for IT professionals, such as designing production RAG/search systems, multi-agent workflows, enterprise copilots, coding agents, multimodal applications, real-time voice agents, recommendation/personalization, document intelligence, AI gateways/model routing, scalable inference, GPU serving, caching, data pipelines, evals, guardrails, security, monitoring, cost/latency optimization, reliability and deployment. Strong channels may cover either category deeply or both; do not require every channel to cover both. Prefer recent sample videos and repeated technical depth over channel branding. Official channels from Anthropic, Meta, Groq, OpenAI, DeepSeek, AWS, Databricks, Snowflake, NVIDIA, Palantir, CrowdStrike, Apple, Alphabet/Google, Microsoft, Mistral and other relevant providers qualify when sample videos directly cover their AI tools, engineering, research or implementations. Reject children entertainment, nursery rhymes, songs, gaming, lifestyle, generic entertainment, unrelated tutorials and channels with only incidental AI mentions. Never infer fit from subscriber count or channel name alone. For each channel provide confidenceScore 0-100, nicheRelevance 0-100, recommendation strong_candidate/possible_candidate/unlikely_match, concise reason, and up to 3 evidence items. Score strong only when multiple samples or clear channel evidence show sustained relevant coverage; weak or ambiguous evidence must score 80 or below. Return ONLY JSON in this shape: {\"assessments\":[{\"channelId\":\"...\",\"confidenceScore\":0,\"nicheRelevance\":0,\"recommendation\":\"unlikely_match\",\"reason\":\"...\",\"evidence\":[\"...\"]}]}. Include every channelId exactly once.";
 function parseAssessments(raw: string, ids: string[]) {
  const cleaned=raw.replace(/^```(?:json)?\s*/i,"").replace(/\s*```$/,"").trim();
- const parsed=JSON.parse(cleaned); const map=new Map<string,Assessment>();
+ const jsonText=cleaned.match(/\{[\s\S]*\}/)?.[0] ?? cleaned;
+ const parsed=JSON.parse(jsonText); const map=new Map<string,Assessment>();
  for(const x of (Array.isArray(parsed.assessments)?parsed.assessments:[])) {
   if(!ids.includes(x.channelId)||map.has(x.channelId)) continue;
   const n=(v:unknown)=>Math.max(0,Math.min(100,Math.round(Number(v)||0)));
@@ -59,16 +60,21 @@ async function screenDiscoveryChannels(channels: YouTubeChannel[], samples: Map<
   const res=await fetch("https://generativelanguage.googleapis.com/v1beta/models/"+model+":generateContent",{method:"POST",headers:{"Content-Type":"application/json","x-goog-api-key":process.env.GEMINI_API_KEY!},body:JSON.stringify({systemInstruction:{parts:[{text:assessmentRules}]},contents:[{role:"user",parts:[{text:prompt}]}],generationConfig:{responseMimeType:"application/json",temperature:0.1,maxOutputTokens:2048}}),signal:AbortSignal.timeout(60000)});
   const data=await res.json().catch(()=>({})); if(!res.ok) throw new Error(data?.error?.message||"Gemini screening failed.");
   const out=data?.candidates?.[0]?.content?.parts?.map((p:{text?:string})=>p.text??"").join(""); if(!out) throw new Error("Gemini returned an empty screening result.");
-  return {assessments:parseAssessments(out,ids),provider:model};
+  const assessments=parseAssessments(out,ids);
+  if(ids.some(id=>!assessments.has(id))) throw new Error("Gemini returned incomplete channel assessments; retry discovery.");
+  return {assessments,provider:model};
  };
  const callGroq=async(prompt:string,ids:string[])=>{
-  const model=process.env.GROQ_MODEL||"openai/gpt-oss-120b";
+  const model=process.env.GROQ_MODEL||"llama-3.3-70b-versatile";
   let res: Response;
   let data: Record<string, unknown> = {};
   for (let attempt = 0; attempt < 2; attempt++) {
-   res=await fetch("https://api.groq.com/openai/v1/chat/completions",{method:"POST",headers:{"Content-Type":"application/json",Authorization:"Bearer "+process.env.GROQ_API_KEY!},body:JSON.stringify({model,temperature:0.1,max_tokens:500,response_format:{type:"json_object"},messages:[{role:"system",content:assessmentRules},{role:"user",content:prompt}]}),signal:AbortSignal.timeout(60000)});
+   const retryingWithoutJsonMode = attempt === 1;
+    res=await fetch("https://api.groq.com/openai/v1/chat/completions",{method:"POST",headers:{"Content-Type":"application/json",Authorization:"Bearer "+process.env.GROQ_API_KEY!},body:JSON.stringify({model,temperature:0.1,max_tokens:800,...(retryingWithoutJsonMode?{}:{response_format:{type:"json_object"}}),messages:[{role:"system",content:assessmentRules+" Output a valid JSON object only. No markdown or commentary."},{role:"user",content:prompt+"\nReturn exactly the assessments JSON shape requested in the system instruction."}]}),signal:AbortSignal.timeout(60000)});
    data=asRecord(await res.json().catch(()=>({})));
    if(res.ok) break;
+   const errorText=String(asRecord(data.error).message||"");
+   if(attempt===0 && res.status===400 && /failed_generation|failed to generate json/i.test(errorText)) continue;
    if(res.status!==429 || attempt===1) {
     const errorMessage=asRecord(data.error).message;
     const error=new Error((typeof errorMessage==="string"?errorMessage:undefined)||"Groq screening failed ("+res.status+").") as Error & {status?:number;retryAfter?:string};
@@ -81,7 +87,9 @@ async function screenDiscoveryChannels(channels: YouTubeChannel[], samples: Map<
   const choices: unknown[]=Array.isArray(data.choices)?data.choices:[];
   const content=asRecord(asRecord(choices[0]).message).content;
   if(typeof content!=="string"||!content) throw new Error("Groq returned an empty screening result.");
-  return {assessments:parseAssessments(content,ids),provider:model};
+  const assessments=parseAssessments(content,ids);
+  if(ids.some(id=>!assessments.has(id))) throw new Error("Groq returned incomplete channel assessments; retry discovery.");
+  return {assessments,provider:model};
  };
 
  for(const chunk of chunks) {
@@ -155,6 +163,31 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: `Provide language "hi" or "en" and at least one keyword (maximum 80 characters each).` }, { status: 400 });
   }
 
+  // YouTube search.list costs 100 quota units per request. Combine related
+  // phrases with YouTube's OR operator and cap discovery at four search calls.
+  const MAX_SEARCH_REQUESTS = 4;
+  const MAX_QUERY_LENGTH = 450;
+  const searchQueries: string[] = [];
+  let queryTerms: string[] = [];
+  for (const keyword of keywords) {
+    const term = `"${keyword.replace(/"/g, "").trim()}"`;
+    const candidate = [...queryTerms, term].join("|");
+    if (candidate.length > MAX_QUERY_LENGTH && queryTerms.length) {
+      searchQueries.push(queryTerms.join("|"));
+      queryTerms = [term];
+    } else {
+      queryTerms.push(term);
+    }
+  }
+  if (queryTerms.length) searchQueries.push(queryTerms.join("|"));
+  if (searchQueries.length > MAX_SEARCH_REQUESTS) {
+    return NextResponse.json({
+      error: `These keywords require ${searchQueries.length} search groups. Reduce the keyword list or use at most ${MAX_SEARCH_REQUESTS} groups (each query is limited to ${MAX_QUERY_LENGTH} characters).`,
+      searchGroupsRequired: searchQueries.length,
+      maximumSearchRequests: MAX_SEARCH_REQUESTS,
+    }, { status: 400 });
+  }
+
   const { count, error: countError } = await supabase.from("competitors").select("id", { count: "exact", head: true }).eq("owner_id", user.id).eq("is_active", true);
   if (countError) return NextResponse.json({ error: "Could not check your active competitor limit." }, { status: 500 });
 
@@ -163,11 +196,12 @@ export async function POST(request: NextRequest) {
     const channelIds = new Set<string>();
 
     // Search for videos that indicate the desired format, not channels merely discussing AI.
-    for (const keyword of keywords) {
+    // OR-grouping preserves keyword coverage while reducing 30+ requests to at most four.
+    for (const searchQuery of searchQueries) {
       const reservation = await reserveQuota(supabase, "search");
       if (!reservation.allowed) return NextResponse.json({ error: "Daily YouTube search request limit reached.", quota: reservation }, { status: 429 });
       const search = await youtubeGet<{ items?: Array<{ id?: { videoId?: string }; snippet?: { channelId?: string; title?: string; description?: string; channelTitle?: string; publishedAt?: string; thumbnails?: { medium?: { url?: string }; default?: { url?: string } } } }> }>("search", {
-        part: "snippet", type: "video", maxResults: "25", q: keyword, relevanceLanguage: language, order: "relevance", videoDuration: "medium",
+        part: "snippet", type: "video", maxResults: "25", q: searchQuery, relevanceLanguage: language, order: "relevance", videoDuration: "medium",
       });
       for (const item of search.items ?? []) {
         const channelId = item.snippet?.channelId;
@@ -181,7 +215,7 @@ export async function POST(request: NextRequest) {
           channelTitle: item.snippet?.channelTitle ?? "",
           publishedAt: item.snippet?.publishedAt ?? null,
           thumbnailUrl: item.snippet?.thumbnails?.medium?.url ?? item.snippet?.thumbnails?.default?.url ?? null,
-          matchedQuery: keyword,
+          matchedQuery: searchQuery,
           videoUrl: videoId ? `https://www.youtube.com/watch?v=${videoId}` : null,
         };
         const list = samplesByChannel.get(channelId) ?? [];
@@ -280,7 +314,7 @@ export async function POST(request: NextRequest) {
 
     const { data: quota } = await supabase.rpc("get_youtube_quota_status");
     return NextResponse.json({
-      searchedKeywords: keywords, language, channelsDiscovered: channelIds.size,
+      searchedKeywords: keywords, searchQueriesUsed: searchQueries, youtubeSearchRequests: searchQueries.length, language, channelsDiscovered: channelIds.size,
       channelsAIassessed: assessments.size,
       priorRejectedExamplesUsed: rejectedExamples.length,
       previouslyRejectedChannelsSkipped: rejectedIds.size,
