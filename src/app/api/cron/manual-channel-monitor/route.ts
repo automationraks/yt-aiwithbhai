@@ -17,7 +17,7 @@ export async function GET(req:NextRequest){
  const s=createClient(url,key,{auth:{persistSession:false,autoRefreshToken:false}});
  try{
   const now=new Date().toISOString();
-  const{data:due,error}=await s.from("manual_tracked_channels").select("id,owner_id,youtube_channel_id,competitor_id").eq("platform","youtube").eq("is_active",true).or(`next_check_at.is.null,next_check_at.lte.${now}`).order("next_check_at",{ascending:true,nullsFirst:true}).limit(LIMIT);
+  const{data:due,error}=await s.from("manual_tracked_channels").select("id,owner_id,youtube_channel_id,competitor_id").eq("platform","youtube").eq("is_active",true).not("youtube_channel_id","is",null).or(`next_check_at.is.null,next_check_at.lte.${now}`).order("next_check_at",{ascending:true,nullsFirst:true}).limit(LIMIT);
   if(error)throw new Error("Loading due channels failed: "+error.message);
   if(!due?.length)return NextResponse.json({processed:0,message:"No priority channels due"});
   await reserve(s);
