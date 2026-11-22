@@ -1,4 +1,4 @@
-import { getAIConfiguration } from "@/lib/ai/provider";
+import { getAIConfiguration, type AIProvider } from "@/lib/ai/provider";
 function parseJson(text: string): unknown {
   const cleaned = text.trim().replace(/^```json\s*/i, "").replace(/\s*```$/, "");
   try { return JSON.parse(cleaned); } catch { const start = cleaned.indexOf("{"); const end = cleaned.lastIndexOf("}"); if (start >= 0 && end > start) return JSON.parse(cleaned.slice(start, end + 1)); throw new Error("AI provider returned invalid JSON."); }
