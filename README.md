@@ -56,7 +56,7 @@ The starter keyword action seeds English and Hindi searches for AI system design
 Creator discovery returns candidates. AI screening is advisory and cannot establish technical correctness or substitute for watching sample videos. Manually approve creators before including them in the active research set.
 
 ## AI providers
-Set `GEMINI_API_KEY` for Gemini screening. Optional `GEMINI_MODEL` defaults to `gemini-2.5-flash-lite`. Groq fallback uses `GROQ_API_KEY` and optional `GROQ_MODEL` (default `openai/gpt-oss-120b`).
+Set `GEMINI_API_KEY` for Gemini screening. Optional `GEMINI_MODEL` defaults to `gemini-3.5-flash-lite`. Gemini calls use Google's Interactions API (`/v1beta/interactions`) with stateless requests (`store: false`) and JSON response formatting. Groq fallback uses `GROQ_API_KEY` and optional `GROQ_MODEL` (default `openai/gpt-oss-120b`). Video Explorer classification is pinned to Gemini and does not fall back to Groq.
 
 ## Local development
 Install dependencies with `npm install`, copy `.env.example` to `.env.local`, add server-side credentials and run `npm run dev`.
