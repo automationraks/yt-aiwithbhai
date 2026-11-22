@@ -5,6 +5,8 @@ export const dynamic="force-dynamic";
 export const maxDuration=60;
 const API="https://www.googleapis.com/youtube/v3";
 const LIMIT=20;
+type PlaylistItemsResponse = { items?: Array<{ contentDetails?: { videoId?: string } }> };
+type VideoListResponse = { items?: Array<{ id: string; snippet?: { title?: string; description?: string; publishedAt?: string; defaultLanguage?: string; thumbnails?: { high?: { url?: string }; medium?: { url?: string } } }; contentDetails?: { duration?: string }; statistics?: { viewCount?: string; likeCount?: string; commentCount?: string } }> };
 async function yt<T>(resource:string,params:Record<string,string>):Promise<T>{
  const key=process.env.YOUTUBE_API_KEY;if(!key)throw new Error("YOUTUBE_API_KEY missing");
  const url=new URL(API+"/"+resource);Object.entries({...params,key}).forEach(([k,v])=>url.searchParams.set(k,v));
@@ -43,11 +45,11 @@ export async function GET(req:NextRequest){
     const uploads=ch.contentDetails?.relatedPlaylists?.uploads;
     if(uploads){
      await reserve(s);
-     const p=await yt<{items?:Array<{contentDetails?:{videoId?:string}}}>("playlistItems",{part:"contentDetails",playlistId:uploads,maxResults:"5"});
+     const p=await yt<PlaylistItemsResponse>("playlistItems",{part:"contentDetails",playlistId:uploads,maxResults:"5"});
      const vids=[...new Set((p.items??[]).map(x=>x.contentDetails?.videoId).filter((x):x is string=>Boolean(x)))];
      if(vids.length){
       await reserve(s);
-      const v=await yt<{items?:Array<{id:string;snippet?:{title?:string;description?:string;publishedAt?:string;defaultLanguage?:string;thumbnails?:{high?:{url?:string};medium?:{url?:string}}};contentDetails?:{duration?:string};statistics?:{viewCount?:string;likeCount?:string;commentCount?:string}}}>("videos",{part:"snippet,contentDetails,statistics",id:vids.join(","),maxResults:"50"});
+      const v=await yt<VideoListResponse>("videos",{part:"snippet,contentDetails,statistics",id:vids.join(","),maxResults:"50"});
       const {data:alreadySaved,error:existingError}=await s.from("videos").select("youtube_video_id").eq("owner_id",row.owner_id).in("youtube_video_id",vids);
       if(existingError)throw new Error("Checking previously seen uploads failed: "+existingError.message);
       const seen=new Set((alreadySaved??[]).map(x=>x.youtube_video_id));
