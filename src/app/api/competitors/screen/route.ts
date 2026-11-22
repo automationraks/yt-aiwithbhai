@@ -117,20 +117,37 @@ function parseResult(text: string) {
 
 async function runGemini(prompt: string, images: ImagePart[]) {
   const key = process.env.GEMINI_API_KEY!;
-  const model = process.env.GEMINI_MODEL || "gemini-2.5-flash-lite";
-  const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`, {
-    method: "POST", headers: { "Content-Type": "application/json", "x-goog-api-key": key },
+  const model = process.env.GEMINI_MODEL || "gemini-3.5-flash-lite";
+  const input = [
+    { type: "text", text: prompt },
+    ...images.map((image) => ({
+      type: "image",
+      data: image.inlineData.data,
+      mime_type: image.inlineData.mimeType,
+    })),
+  ];
+  const response = await fetch("https://generativelanguage.googleapis.com/v1beta/interactions", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", "x-goog-api-key": key },
     body: JSON.stringify({
-      systemInstruction: { parts: [{ text: instruction }] },
-      contents: [{ role: "user", parts: [{ text: prompt }, ...images] }],
-      generationConfig: { responseMimeType: "application/json", temperature: 0.1, maxOutputTokens: 1200 },
+      model,
+      input,
+      system_instruction: instruction,
+      response_format: { type: "text", mime_type: "application/json" },
+      generation_config: { temperature: 0.1, max_output_tokens: 1200, thinking_level: "minimal" },
+      store: false,
     }),
     signal: AbortSignal.timeout(30000),
   });
   const payload = await response.json().catch(() => ({}));
-  if (!response.ok) throw new Error(payload?.error?.message || `Gemini request failed (${response.status}).`);
-  const output = payload?.candidates?.[0]?.content?.parts?.map((part: { text?: string }) => part.text ?? "").join("");
-  if (!output) throw new Error("Gemini returned an empty screening result.");
+  if (!response.ok) throw new Error(payload?.error?.message || payload?.message || `Gemini Interactions request failed (${response.status}).`);
+  const output = Array.isArray(payload?.steps)
+    ? payload.steps.filter((step: { type?: string }) => step?.type === "model_output")
+      .flatMap((step: { content?: Array<{ type?: string; text?: string }> }) => Array.isArray(step.content) ? step.content : [])
+      .filter((part: { type?: string; text?: string }) => part?.type === "text" && typeof part.text === "string")
+      .map((part: { text: string }) => part.text).join("\\n")
+    : "";
+  if (!output) throw new Error("Gemini Interactions API returned an empty screening result.");
   return parseResult(output);
 }
 
@@ -212,11 +229,11 @@ export async function POST(request: NextRequest) {
   const preferred = config.primary;
   try {
     if (preferred === "gemini" && config.available.includes("gemini")) {
-      result = await runGemini(prompt, images); provider = process.env.GEMINI_MODEL || "gemini-2.5-flash-lite";
+      result = await runGemini(prompt, images); provider = process.env.GEMINI_MODEL || "gemini-3.5-flash-lite";
     } else if (preferred === "groq" && config.available.includes("groq")) {
       result = await runGroq(prompt); provider = process.env.GROQ_MODEL || "openai/gpt-oss-120b";
     } else if (config.available.includes("gemini")) {
-      result = await runGemini(prompt, images); provider = process.env.GEMINI_MODEL || "gemini-2.5-flash-lite";
+      result = await runGemini(prompt, images); provider = process.env.GEMINI_MODEL || "gemini-3.5-flash-lite";
     } else {
       result = await runGroq(prompt); provider = process.env.GROQ_MODEL || "openai/gpt-oss-120b";
     }
@@ -225,7 +242,7 @@ export async function POST(request: NextRequest) {
     if (!config.available.includes(fallback)) throw primaryError;
     fallbackNote = primaryError instanceof Error ? primaryError.message.slice(0, 300) : "Primary provider failed.";
     if (fallback === "groq") { result = await runGroq(prompt); provider = process.env.GROQ_MODEL || "openai/gpt-oss-120b"; imagesUsed = 0; }
-    else { result = await runGemini(prompt, images); provider = process.env.GEMINI_MODEL || "gemini-2.5-flash-lite"; }
+    else { result = await runGemini(prompt, images); provider = process.env.GEMINI_MODEL || "gemini-3.5-flash-lite"; }
   }
 
   const aiScreening = {
