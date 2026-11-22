@@ -23,17 +23,18 @@ function parse(raw:string) {
  if(["instagram.com","m.instagram.com"].includes(host)&&u.pathname!=="/")return {platform:"instagram" as const,url:u.toString(),videoId:null,channelId:null,handle:null,username:null};
  return null;
 }
-async function yt<T>(resource:string,params:Record<string,string>):Promise<T>{
+async function yt<T>(s:NonNullable<Awaited<ReturnType<typeof createSupabaseServerClient>>>,resource:string,params:Record<string,string>):Promise<T>{
+ const reservation=await s.rpc("reserve_youtube_quota",{p_bucket:"general",p_amount:1});if(reservation.error)throw new Error("YouTube quota tracker unavailable: "+reservation.error.message);if(!reservation.data?.allowed)throw new Error("YouTube general API quota exhausted. Try again after reset.");
  const key=process.env.YOUTUBE_API_KEY;if(!key)throw new Error("YOUTUBE_API_KEY is not configured.");
  const url=new URL(API+"/"+resource);Object.entries({...params,key}).forEach(([k,v])=>url.searchParams.set(k,v));
  const r=await fetch(url,{cache:"no-store",signal:AbortSignal.timeout(15000)});const d=await r.json().catch(()=>({}));
  if(!r.ok)throw new Error(d?.error?.message||"YouTube API request failed.");return d as T;
 }
-async function resolve(x:NonNullable<ReturnType<typeof parse>>){
- if(x.videoId){const v=await yt<{items?:Array<{snippet?:{channelId?:string}}>}>("videos",{part:"snippet",id:x.videoId});const id=v.items?.[0]?.snippet?.channelId;if(!id)throw new Error("Could not resolve video to a public channel.");return id;}
+async function resolve(s:NonNullable<Awaited<ReturnType<typeof createSupabaseServerClient>>>,x:NonNullable<ReturnType<typeof parse>>){
+ if(x.videoId){const v=await yt<{items?:Array<{snippet?:{channelId?:string}}>}>(s,"videos",{part:"snippet",id:x.videoId});const id=v.items?.[0]?.snippet?.channelId;if(!id)throw new Error("Could not resolve video to a public channel.");return id;}
  const p:Record<string,string>={part:"snippet,statistics,contentDetails",maxResults:"1"};
  if(x.channelId)p.id=x.channelId;else if(x.handle)p.forHandle=x.handle;else if(x.username)p.forUsername=x.username;else throw new Error("Custom /c/ URLs cannot be resolved. Use /channel/UC…, @handle, or a video URL.");
- const c=await yt<{items?:Array<{id:string}>}>("channels",p);const id=c.items?.[0]?.id;if(!id)throw new Error("YouTube could not find that channel.");return id;
+ const c=await yt<{items?:Array<{id:string}>}>(s,"channels",p);const id=c.items?.[0]?.id;if(!id)throw new Error("YouTube could not find that channel.");return id;
 }
 export async function GET(){
  const s=await createSupabaseServerClient();if(!s)return NextResponse.json({error:"Supabase unavailable"},{status:503});
@@ -52,8 +53,8 @@ export async function POST(req:NextRequest){
   if(error)return NextResponse.json({error:error.message},{status:500});return NextResponse.json({item:data,message:"Saved. Instagram monitoring is not integrated."});
  }
  try{
-  const channelId=await resolve(x);
-  const c=await yt<{items?:Array<{id:string;snippet?:{title?:string;description?:string;publishedAt?:string;country?:string;customUrl?:string};statistics?:{subscriberCount?:string;videoCount?:string;viewCount?:string}}>}>("channels",{part:"snippet,statistics,contentDetails",id:channelId});
+  const channelId=await resolve(s,x);
+  const c=await yt<{items?:Array<{id:string;snippet?:{title?:string;description?:string;publishedAt?:string;country?:string;customUrl?:string};statistics?:{subscriberCount?:string;videoCount?:string;viewCount?:string}}>}>(s,"channels",{part:"snippet,statistics,contentDetails",id:channelId});
   const ch=c.items?.[0];if(!ch?.snippet?.title)throw new Error("Channel is private or unavailable.");
   if(EXCLUDE.test(ch.snippet.title+" "+(ch.snippet.description??"")))return NextResponse.json({error:"Blocked: channel metadata matches children's content or stock/share-market, trading or investment content."},{status:422});
   const now=new Date().toISOString(),title=ch.snippet.title;
