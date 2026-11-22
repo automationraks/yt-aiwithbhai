@@ -28,7 +28,7 @@ export async function GET(req:NextRequest){
    try{
     const ch=byId.get(row.youtube_channel_id);if(!ch?.snippet?.title)throw new Error("Channel unavailable");
     const identity=ch.snippet.title+" "+(ch.snippet.description??"");
-    if(/\b(?:kids? channel|children'?s? channel|for kids|made for kids|nursery rhymes?|toy unboxing|preschool learning|baby songs?|stock market|share market|stock trading|share trading|trading channel|day trading|intraday trading|nifty|sensex|options trading|crypto trading|investment tips|stock tips)\b/i.test(identity)){
+    if(/\b(?:kids?|children|childrens|nursery|cartoons?|toy|preschool|baby songs?|stock market|share market|stock trading|share trading|trading|day trading|intraday|nifty|sensex|options trading|crypto trading|investing|investment tips|stock tips)\b/i.test(identity)){
      await s.from("manual_tracked_channels").update({is_active:false,monitoring_status:"blocked",last_error:"Metadata matches a protected exclusion"}).eq("id",row.id);
      if(row.competitor_id)await s.from("competitors").update({is_active:false,user_tracking_preference:false}).eq("id",row.competitor_id);
      failed++;continue;
