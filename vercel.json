@@ -1,0 +1,5 @@
+{
+  "crons": [
+    { "path": "/api/cron/manual-channel-monitor", "schedule": "15 2 * * *" }
+  ]
+}
