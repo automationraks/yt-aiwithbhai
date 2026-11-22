@@ -37,6 +37,8 @@ export async function GET(req:NextRequest){
     if(row.competitor_id){
      const u=await s.from("competitors").update({channel_title:ch.snippet.title,channel_url:ch.snippet.customUrl?"https://www.youtube.com/@"+ch.snippet.customUrl.replace(/^@/,""):"https://www.youtube.com/channel/"+ch.id,description:ch.snippet.description??null,published_at:ch.snippet.publishedAt??null,country:ch.snippet.country??null,subscriber_count:st.subscriberCount??null,video_count:st.videoCount??null,view_count:st.viewCount??null,is_active:true,user_tracking_preference:true,is_manual_priority:true,last_checked_at:now}).eq("id",row.competitor_id).eq("owner_id",row.owner_id);
      if(u.error)throw new Error(u.error.message);
+     const snapshot=await s.from("competitor_snapshots").insert({competitor_id:row.competitor_id,subscriber_count:Number(st.subscriberCount??0),video_count:Number(st.videoCount??0),view_count:Number(st.viewCount??0)});
+     if(snapshot.error)throw new Error("Saving channel metric history failed: "+snapshot.error.message);
     }
     const uploads=ch.contentDetails?.relatedPlaylists?.uploads;
     if(uploads){
