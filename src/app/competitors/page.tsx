@@ -17,12 +17,12 @@ type Competitor = {
   id: string; youtube_channel_id: string; channel_title: string; channel_url: string | null;
   published_at: string | null; country: string | null; language: string | null;
   subscriber_count: number | string | null; video_count: number | string | null;
-  view_count: number | string | null; is_active: boolean;
+  view_count: number | string | null; is_active: boolean; is_manual_priority?: boolean;
   ai_production_status: "needs_review" | "qualified" | "rejected";
   ai_production_evidence: { sampleVideos?: SampleVideo[]; aiScreening?: AIScreening; confidenceScore?: number; nicheRelevance?: number } | null;
   ai_production_review_note: string | null;
 };
-type ManualLink = { id:string; platform:"youtube"|"instagram"; url:string; display_name:string; is_active:boolean };
+type ManualLink = { id:string; platform:"youtube"|"instagram"; url:string; display_name:string; is_active:boolean; monitoring_status?:string; last_checked_at?:string|null; next_check_at?:string|null; last_error?:string|null };
 type DiscoveryQuotaBucket = { remaining: number };
 type DiscoveryResult = {
   saved?: number;
@@ -91,6 +91,7 @@ export default function CompetitorExplorerPage() {
         if (item.ai_production_status === "rejected") return false;
         const confidence = item.ai_production_evidence?.confidenceScore;
         const relevance = item.ai_production_evidence?.nicheRelevance;
+        if (item.is_manual_priority) return true;
         return !(
           (typeof confidence === "number" && confidence < 81) ||
           (typeof relevance === "number" && relevance < 81)
@@ -115,8 +116,10 @@ export default function CompetitorExplorerPage() {
     return matchesFilter && (!term || item.channel_title.toLowerCase().includes(term) || item.youtube_channel_id.toLowerCase().includes(term));
   }), [competitors, filter, search]);
 
-  async function addManualLink(){setManualBusy(true);setError("");setNotice("");try{const response=await fetch("/api/manual-tracked-channels",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({url:manualUrl,display_name:manualName})});const result=await response.json();if(!response.ok)throw new Error(result.error||"Could not add link.");setManualLinks(current=>[result.item,...current.filter(x=>x.id!==result.item.id)]);setManualUrl("");setManualName("");setNotice("Social channel link added to your manual tracking list.");}catch(err){setError(err instanceof Error?err.message:"Could not add link.");}finally{setManualBusy(false);}}
-  async function removeManualLink(id:string){try{const response=await fetch("/api/manual-tracked-channels?id="+encodeURIComponent(id),{method:"DELETE"});const result=await response.json();if(!response.ok)throw new Error(result.error||"Could not remove link.");setManualLinks(current=>current.filter(x=>x.id!==id));}catch(err){setError(err instanceof Error?err.message:"Could not remove link.");}}
+  async function addManualLink(){setManualBusy(true);setError("");setNotice("");try{const response=await fetch("/api/manual-tracked-channels",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({url:manualUrl,display_name:manualName})});const result=await response.json();if(!response.ok)throw new Error(result.error||"Could not add link.");setManualLinks(current=>[result.item,...current.filter(x=>x.id!==result.item.id)]);setManualUrl("");setManualName("");setNotice(result.priority ? result.channelTitle + " added as a manual priority channel. It bypasses AI niche scoring and is scheduled for daily monitoring." : "Instagram link saved. Instagram monitoring is not integrated yet.");
+      await loadCompetitors();}catch(err){setError(err instanceof Error?err.message:"Could not add link.");}finally{setManualBusy(false);}}
+  async function toggleManualLink(link:ManualLink){try{const response=await fetch("/api/manual-tracked-channels",{method:"PATCH",headers:{"Content-Type":"application/json"},body:JSON.stringify({id:link.id,is_active:!link.is_active})});const result=await response.json();if(!response.ok)throw new Error(result.error||"Could not update tracking.");setManualLinks(current=>current.map(x=>x.id===link.id?result.item:x));await loadCompetitors();}catch(err){setError(err instanceof Error?err.message:"Could not update tracking.");}}
+  async function removeManualLink(id:string){try{const response=await fetch("/api/manual-tracked-channels?id="+encodeURIComponent(id),{method:"DELETE"});const result=await response.json();if(!response.ok)throw new Error(result.error||"Could not remove link.");setManualLinks(current=>current.filter(x=>x.id!==id));await loadCompetitors();}catch(err){setError(err instanceof Error?err.message:"Could not remove link.");}}
 
   async function discover() {
     const keywordList = Array.from(new Set(keywords.split(/[\n,]/).map((item) => item.trim()).filter(Boolean)));
@@ -216,9 +219,9 @@ export default function CompetitorExplorerPage() {
     {notice && <div className="mb-4 rounded-lg border border-emerald-500/20 bg-emerald-500/10 p-3 text-sm text-emerald-300">{notice}{lastDiscovery?.quota?.search && lastDiscovery.quota.general && <div className="mt-1 text-xs text-emerald-200/70">Search quota remaining: {lastDiscovery.quota.search.remaining} · General units remaining: {lastDiscovery.quota.general.remaining}</div>}</div>}
 
     <section className="mb-6 rounded-xl border border-cyan-500/20 bg-[#111925] p-5">
-      <div className="mb-3"><h2 className="text-sm font-semibold">Manually tracked social channels</h2><p className="mt-1 text-xs text-slate-400">Add public YouTube or Instagram profile, channel, video or post links. These are saved separately from AI-discovered YouTube competitors.</p></div>
+      <div className="mb-3"><h2 className="text-sm font-semibold">Manually tracked social channels</h2><p className="mt-1 text-xs text-slate-400">YouTube channels are promoted into your approved competitor list and monitored daily ahead of AI-discovered channels. Your manual approval bypasses AI niche scoring; children’s and stock/share-market/trading channels remain blocked. Instagram links are saved only; monitoring is not integrated.</p></div>
       <div className="grid gap-3 md:grid-cols-[1fr_220px_auto]"><input value={manualUrl} onChange={e=>setManualUrl(e.target.value)} placeholder="Paste YouTube or Instagram URL" className="rounded-lg border border-slate-700 bg-[#0b121d] px-3 py-2 text-sm"/><input value={manualName} onChange={e=>setManualName(e.target.value)} placeholder="Display name (optional)" className="rounded-lg border border-slate-700 bg-[#0b121d] px-3 py-2 text-sm"/><button onClick={()=>void addManualLink()} disabled={manualBusy||!manualUrl.trim()} className="rounded-lg bg-cyan-500 px-4 py-2 text-sm font-semibold text-slate-950 disabled:opacity-50">{manualBusy?"Adding...":"Add link"}</button></div>
-      {manualLinks.length>0&&<div className="mt-4 space-y-2">{manualLinks.map(link=><div key={link.id} className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-slate-800 bg-[#0b121d] px-3 py-2"><div className="min-w-0"><span className="mr-2 rounded bg-slate-800 px-2 py-1 text-[10px] uppercase text-cyan-300">{link.platform}</span><span className="text-xs font-medium">{link.display_name}</span><a href={link.url} target="_blank" rel="noreferrer" className="ml-2 break-all text-[10px] text-sky-300 underline">{link.url}</a></div><button onClick={()=>void removeManualLink(link.id)} className="text-xs text-red-300 hover:text-red-200">Remove</button></div>)}</div>}
+      {manualLinks.length>0&&<div className="mt-4 space-y-2">{manualLinks.map(link=><div key={link.id} className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-slate-800 bg-[#0b121d] px-3 py-2"><div className="min-w-0"><span className="mr-2 rounded bg-slate-800 px-2 py-1 text-[10px] uppercase text-cyan-300">{link.platform}</span><span className="text-xs font-medium">{link.display_name}</span><a href={link.url} target="_blank" rel="noreferrer" className="ml-2 break-all text-[10px] text-sky-300 underline">{link.url}</a><div className="mt-1 text-[10px] text-slate-500">{link.platform==="youtube"?(link.is_active?"Priority monitoring · "+(link.monitoring_status||"queued"):"Paused"):"Saved only · monitoring unavailable"}{link.last_checked_at?" · Last checked "+new Date(link.last_checked_at).toLocaleString("en-IN",{dateStyle:"medium",timeStyle:"short"}):""}{link.last_error?" · "+link.last_error:""}</div></div><div className="flex gap-3"><button onClick={()=>void toggleManualLink(link)} className="text-xs text-cyan-300 hover:text-cyan-200">{link.is_active?"Pause":"Resume"}</button><button onClick={()=>void removeManualLink(link.id)} className="text-xs text-red-300 hover:text-red-200">Remove</button></div></div>)}</div>}
     </section>
 
     <section className="overflow-hidden rounded-xl border border-slate-800 bg-[#111925]">
