@@ -29,8 +29,8 @@ export async function POST() {
   }
 
   const { data, error } = await supabase.from("competitors")
-    .select("id,youtube_channel_id,channel_title,channel_url,description,published_at,country,language,subscriber_count,video_count,view_count,is_active,discovered_at,last_checked_at,ai_production_status,ai_production_evidence,ai_production_reviewed_at,ai_production_review_note,discovery_count,last_discovered_at,discovery_eligibility,discovery_reason,discovery_score,user_tracking_preference,last_user_action,last_user_action_at")
-    .eq("owner_id", user.id).order("subscriber_count", { ascending: false, nullsFirst: false }).limit(500);
+    .select("id,youtube_channel_id,channel_title,channel_url,description,published_at,country,language,subscriber_count,video_count,view_count,is_active,discovered_at,last_checked_at,ai_production_status,ai_production_evidence,ai_production_reviewed_at,ai_production_review_note,discovery_count,last_discovered_at,discovery_eligibility,discovery_reason,discovery_score,user_tracking_preference,last_user_action,last_user_action_at,is_manual_priority")
+    .eq("owner_id", user.id).order("is_manual_priority", { ascending: false }).order("subscriber_count", { ascending: false, nullsFirst: false }).limit(500);
   if (error) return NextResponse.json({ error: "Tracking was reconciled, but the list could not be loaded.", details: error.message }, { status: 500 });
   return NextResponse.json({ competitors: data ?? [], activated, paused, activeCount: (data ?? []).filter((item) => item.is_active).length });
 }
