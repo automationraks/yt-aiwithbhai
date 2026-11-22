@@ -30,7 +30,7 @@ declare
   v_next integer;
   v_reset timestamptz;
 begin
-  if current_setting('request.jwt.claim.role', true) <> 'service_role' then
+  if coalesce(auth.role(), '') <> 'service_role' then
     raise exception 'Service role required';
   end if;
   if p_bucket not in ('search', 'general') or p_amount < 1 or p_amount > 100 then
