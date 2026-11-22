@@ -32,38 +32,20 @@ type DiscoveryResult = {
 type ScreenResponse = { error?: string; screening?: AIScreening };
 
 const defaultKeywords = [
-  // Practical, scenario-driven AI system design (priority)
-  "AI system design interview real world production architecture",
-  "designing scalable LLM applications production architecture",
-  "RAG system design advanced retrieval reranking evaluation",
-  "enterprise RAG architecture multi tenant security",
-  "multi agent system architecture orchestration workflows",
-  "design enterprise AI copilot end to end architecture",
-  "AI agent production deployment observability guardrails",
-  "LLM inference serving GPU optimization latency cost",
-  "AI application system design caching queues databases",
-  "LLM evaluation monitoring tracing reliability production",
-  "AI gateway model routing fallback rate limiting architecture",
-  "multimodal AI application architecture voice vision agents",
-  "real time voice AI agent system design",
-  "production AI security privacy governance architecture",
-  // Latest AI tools, models and developer platforms
-  "latest AI developer tools hands on review tutorial",
-  "new LLM models API release technical comparison benchmark",
-  "AI coding agents IDE developer workflow tools",
-  "latest agent frameworks LangGraph CrewAI AutoGen OpenAI Agents SDK",
-  "MCP servers tools integrations developer tutorial",
-  "vector databases rerankers embedding models comparison",
-  "LLM observability evaluation tools LangSmith Arize Phoenix Langfuse",
-  "AI inference platforms Groq Together Fireworks Cerebras technical",
-  "Anthropic Claude API tools engineering tutorial",
-  "OpenAI API Responses Agents SDK engineering tutorial",
-  "Google Gemini API Vertex AI developer tools tutorial",
-  "AWS Bedrock production generative AI architecture",
-  "NVIDIA NIM Triton TensorRT inference engineering",
-  "DeepSeek Qwen Llama Mistral model technical comparison",
-  "Databricks Mosaic AI Snowflake Cortex enterprise AI engineering",
-  "Microsoft Azure AI Foundry Copilot Studio engineering",
+  "AI engineer production LLM systems implementation",
+  "LLM engineer build deploy production applications",
+  "AI solutions architect enterprise generative AI architecture",
+  "enterprise solutions architect AI integration systems",
+  "AI engineering manager LLM platform engineering",
+  "production RAG architecture retrieval evaluation implementation",
+  "agentic AI systems LangGraph orchestration production",
+  "LLMOps MLOps AI platform engineering deployment",
+  "LLM inference serving GPU infrastructure optimization",
+  "AI system design scalable production architecture",
+  "enterprise AI copilot backend API integration",
+  "vector database embeddings retrieval system architecture",
+  "LLM observability evaluation tracing reliability security",
+  "cloud AI architecture AWS Azure Google Vertex AI engineering",
 ].join(String.fromCharCode(10));
 function compact(value: number | string | null) {
   const number = Number(value ?? 0);
@@ -213,7 +195,7 @@ export default function CompetitorExplorerPage() {
   }
 
   return <main className="min-h-screen bg-[#090d14] text-slate-100"><div className="mx-auto max-w-[1440px] p-4 md:p-8">
-    <div className="mb-6 flex flex-wrap items-center justify-between gap-3"><div><Link href="/" className="mb-3 inline-flex items-center gap-2 text-xs text-slate-400 hover:text-white"><ArrowLeft size={14}/>Dashboard</Link><div className="flex items-center gap-3"><div className="rounded-xl bg-cyan-500/10 p-3 text-cyan-300"><Target size={22}/></div><div><h1 className="text-2xl font-semibold">Competitor Explorer</h1><p className="mt-1 text-sm text-slate-400">Find channels covering the latest AI tools and practical, scenario-driven AI system design. Only high-confidence technical matches are saved.</p></div></div></div><button onClick={() => void loadCompetitors()} disabled={loading} className="inline-flex items-center gap-2 rounded-lg border border-slate-700 px-3 py-2 text-xs text-slate-300 hover:bg-white/5 disabled:opacity-50"><RefreshCw size={14} className={loading ? "animate-spin" : ""}/>Refresh list</button></div>
+    <div className="mb-6 flex flex-wrap items-center justify-between gap-3"><div><Link href="/" className="mb-3 inline-flex items-center gap-2 text-xs text-slate-400 hover:text-white"><ArrowLeft size={14}/>Dashboard</Link><div className="flex items-center gap-3"><div className="rounded-xl bg-cyan-500/10 p-3 text-cyan-300"><Target size={22}/></div><div><h1 className="text-2xl font-semibold">Competitor Explorer</h1><p className="mt-1 text-sm text-slate-400">Find professional AI engineers, LLM engineers, AI/solutions architects and technical leaders who build and operate production AI systems. Children's content and finance/trading channels are excluded.</p></div></div></div><button onClick={() => void loadCompetitors()} disabled={loading} className="inline-flex items-center gap-2 rounded-lg border border-slate-700 px-3 py-2 text-xs text-slate-300 hover:bg-white/5 disabled:opacity-50"><RefreshCw size={14} className={loading ? "animate-spin" : ""}/>Refresh list</button></div>
 
     <div className="mb-6 grid gap-3 sm:grid-cols-3">
       <div className="rounded-xl border border-slate-800 bg-[#111925] p-4"><div className="text-xs text-slate-400">Active competitors</div><div className="mt-2 text-2xl font-semibold">{activeCount}<span className="ml-1 text-sm font-normal text-slate-500">/ 100</span></div></div>
@@ -222,12 +204,12 @@ export default function CompetitorExplorerPage() {
     </div>
 
     <section className="mb-6 rounded-xl border border-slate-800 bg-[#111925] p-5">
-      <div className="mb-4 flex flex-wrap items-center justify-between gap-2"><div><h2 className="text-sm font-semibold">Discover competitors</h2><p className="mt-1 text-xs text-slate-400">Searches for hands-on AI tool coverage and real-world system design scenarios. AI screens channel candidates and saves only strong matches scoring above 80 for confidence and niche relevance.</p></div><span className="rounded-md border border-cyan-500/20 bg-cyan-500/10 px-2 py-1 text-[10px] text-cyan-300">Global creator discovery</span></div>
+      <div className="mb-4 flex flex-wrap items-center justify-between gap-2"><div><h2 className="text-sm font-semibold">Discover competitors</h2><p className="mt-1 text-xs text-slate-400">Targets practical AI engineering, enterprise architecture, production LLM/RAG, agents, inference, LLMOps and AI platform engineering. Kids/entertainment and finance/trading terms are excluded before AI screening.</p></div><span className="rounded-md border border-cyan-500/20 bg-cyan-500/10 px-2 py-1 text-[10px] text-cyan-300">Global creator discovery</span></div>
       <div className="grid gap-4 lg:grid-cols-[1fr_2fr]">
         <div><label className="mb-2 block text-xs text-slate-400">Search relevance language</label><select value={language} onChange={(event)=>setLanguage(event.target.value as "hi"|"en")} className="w-full rounded-lg border border-slate-700 bg-[#0b121d] px-3 py-2.5 text-sm outline-none focus:border-cyan-500"><option value="hi">Hindi</option><option value="en">English</option></select><p className="mt-2 text-[10px] leading-4 text-slate-500">This affects YouTube search relevance. It does not verify the channel&apos;s actual spoken language.</p></div>
         <div><label className="mb-2 block text-xs text-slate-400">Keywords (one per line or comma-separated)</label><textarea value={keywords} onChange={(event)=>setKeywords(event.target.value)} rows={4} className="w-full resize-y rounded-lg border border-slate-700 bg-[#0b121d] px-3 py-2.5 text-sm outline-none focus:border-cyan-500" placeholder={"AI system design\nRAG architecture and LLM engineering"}/></div>
       </div>
-      <div className="mt-4 flex flex-wrap items-center justify-between gap-3"><p className="max-w-2xl text-[11px] text-slate-500">Prioritizes practical architecture scenarios while also finding credible AI tool/model coverage. Automatic screening requires confidence and relevance scores above 80. AI-generated narration and visuals still require human verification.</p><button onClick={() => void discover()} disabled={discovering || activeCount>=100} className="inline-flex items-center gap-2 rounded-lg bg-cyan-500 px-4 py-2.5 text-sm font-semibold text-slate-950 hover:bg-cyan-400 disabled:cursor-not-allowed disabled:opacity-50">{discovering?<Loader2 size={16} className="animate-spin"/>:<Search size={16}/>} {discovering?"Discovering...":"Discover creators"}</button></div>
+      <div className="mt-4 flex flex-wrap items-center justify-between gap-3"><p className="max-w-2xl text-[11px] text-slate-500">Prioritizes professional AI engineering and solution architecture. Search-level exclusions remove obvious kids and finance/trading results; AI then checks up to three sample videos for practical engineering depth. Only strong matches scoring above 80 pass. AI-generated narration and visuals still require human verification.</p><button onClick={() => void discover()} disabled={discovering || activeCount>=100} className="inline-flex items-center gap-2 rounded-lg bg-cyan-500 px-4 py-2.5 text-sm font-semibold text-slate-950 hover:bg-cyan-400 disabled:cursor-not-allowed disabled:opacity-50">{discovering?<Loader2 size={16} className="animate-spin"/>:<Search size={16}/>} {discovering?"Discovering...":"Discover creators"}</button></div>
     </section>
 
     {error && <div className="mb-4 flex items-start gap-2 rounded-lg border border-red-500/30 bg-red-500/10 p-3 text-sm text-red-300"><AlertCircle size={16} className="mt-0.5 shrink-0"/><span>{error}</span></div>}
