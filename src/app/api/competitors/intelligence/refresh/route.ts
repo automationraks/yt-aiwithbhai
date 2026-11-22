@@ -78,9 +78,9 @@ export async function POST() {
 
   // Only explicitly approved, active channels are scanned.
   const { data: competitors, error } = await supabase.from("competitors")
-    .select("id,youtube_channel_id,channel_title,ai_production_evidence")
+    .select("id,youtube_channel_id,channel_title,ai_production_evidence,is_manual_priority")
     .eq("owner_id", user.id).eq("is_active", true).eq("ai_production_status", "qualified")
-    .order("last_checked_at", { ascending: true, nullsFirst: true }).limit(BATCH_SIZE);
+    .order("is_manual_priority", { ascending: false }).order("last_checked_at", { ascending: true, nullsFirst: true }).limit(BATCH_SIZE);
   if (error) return NextResponse.json({ error: "Could not load approved active competitors.", details: error.message }, { status: 500 });
   if (!competitors?.length) return NextResponse.json({ processed: 0, videosFetched: 0, videosMatchedNiche: 0, message: "No approved active competitors are waiting for refresh." });
 
