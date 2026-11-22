@@ -43,24 +43,29 @@ function durationSeconds(value?: string) {
 async function assessNicheVideos(videos: VideoItem[]) {
   if (!videos.length) return new Map<string, NicheAssessment>();
   const system = "You are a strict editorial classifier for AIWithBh@i, a technical education channel for software engineers, architects and IT professionals. The niche is AI system design and engineering: production LLM applications, RAG, vector databases, AI agents/orchestration, inference/serving, GPU optimization, AI developer tools and APIs, evaluation/observability, AI security/governance, cloud AI platforms, enterprise AI architecture and real-world AI implementations. Reject generic technology news without technical depth, generic coding unrelated to AI, entertainment, gaming, kids content, lifestyle, unrelated tutorials, and videos that only mention AI incidentally. Judge each VIDEO from title and description, not channel name. Mark relevant only when there is clear topical evidence. Return JSON only: {assessments:[{videoId,relevant,score,reason}]}. Use score 0-100. A video is relevant only if score >= 81. Include every supplied videoId exactly once; never invent IDs.";
-  const compact = videos.map((video) => ({
-    videoId: video.id,
-    title: (video.snippet?.title ?? "").slice(0, 220),
-    description: (video.snippet?.description ?? "").slice(0, 700),
-  }));
-  const result = await generateResearchJson(system, JSON.stringify({ channel: "AIWithBh@i", videos: compact }));
-  const raw = result.data as { assessments?: Array<Record<string, unknown>> };
-  const valid = new Set(videos.map((video) => video.id));
+  // Compact sequential batches keep each prompt below Groq's 8K TPM tier.
+  const AI_BATCH_SIZE = 8;
   const assessments = new Map<string, NicheAssessment>();
-  for (const item of Array.isArray(raw.assessments) ? raw.assessments : []) {
-    if (typeof item.videoId !== "string" || !valid.has(item.videoId) || assessments.has(item.videoId)) continue;
-    const score = Math.max(0, Math.min(100, Math.round(Number(item.score) || 0)));
-    assessments.set(item.videoId, {
-      videoId: item.videoId,
-      relevant: item.relevant === true && score >= 81,
-      score,
-      reason: typeof item.reason === "string" ? item.reason.slice(0, 400) : "No reason supplied.",
-    });
+  for (let offset = 0; offset < videos.length; offset += AI_BATCH_SIZE) {
+    const batch = videos.slice(offset, offset + AI_BATCH_SIZE);
+    const compact = batch.map((video) => ({
+      videoId: video.id,
+      title: (video.snippet?.title ?? "").slice(0, 180),
+      description: (video.snippet?.description ?? "").slice(0, 350),
+    }));
+    const result = await generateResearchJson(system, JSON.stringify({ channel: "AIWithBh@i", videos: compact }));
+    const raw = result.data as { assessments?: Array<Record<string, unknown>> };
+    const valid = new Set(batch.map((video) => video.id));
+    for (const item of Array.isArray(raw.assessments) ? raw.assessments : []) {
+      if (typeof item.videoId !== "string" || !valid.has(item.videoId) || assessments.has(item.videoId)) continue;
+      const score = Math.max(0, Math.min(100, Math.round(Number(item.score) || 0)));
+      assessments.set(item.videoId, {
+        videoId: item.videoId,
+        relevant: item.relevant === true && score >= 81,
+        score,
+        reason: typeof item.reason === "string" ? item.reason.slice(0, 400) : "No reason supplied.",
+      });
+    }
   }
   // Fail closed: missing/invalid AI assessments are not considered relevant.
   for (const video of videos) if (!assessments.has(video.id)) {
