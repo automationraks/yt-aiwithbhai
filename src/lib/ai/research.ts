@@ -15,9 +15,27 @@ async function groq(system:string,prompt:string):Promise<unknown>{
   const response=await fetch("https://api.groq.com/openai/v1/chat/completions",{method:"POST",headers:{"Content-Type":"application/json",Authorization:"Bearer "+key},body:JSON.stringify({model,temperature:0.25,response_format:{type:"json_object"},messages:[{role:"system",content:system},{role:"user",content:prompt}]}),signal:AbortSignal.timeout(60000)});
   const payload=await response.json().catch(()=>({})); if(!response.ok) throw new Error(payload?.error?.message || "Groq request failed ("+response.status+")."); const output=payload?.choices?.[0]?.message?.content; if(!output) throw new Error("Groq returned an empty response."); return parseJson(output);
 }
-export async function generateResearchJson(system:string,prompt:string){
-  const config=getAIConfiguration(); if(!config.configured) throw new Error("Configure GEMINI_API_KEY or GROQ_API_KEY in the server environment.");
-  const preferred=config.primary; const fallback=preferred==="gemini"?"groq":"gemini";
-  try { if(preferred==="gemini"&&config.available.includes("gemini")) return {data:await gemini(system,prompt),provider:process.env.GEMINI_MODEL||"gemini-2.5-flash-lite",fallbackUsed:false}; if(preferred==="groq"&&config.available.includes("groq")) return {data:await groq(system,prompt),provider:process.env.GROQ_MODEL||"openai/gpt-oss-120b",fallbackUsed:false}; if(config.available.includes("gemini")) return {data:await gemini(system,prompt),provider:process.env.GEMINI_MODEL||"gemini-2.5-flash-lite",fallbackUsed:false}; return {data:await groq(system,prompt),provider:process.env.GROQ_MODEL||"openai/gpt-oss-120b",fallbackUsed:false}; }
-  catch(primaryError){ if(!config.available.includes(fallback)) throw primaryError; const data=fallback==="gemini"?await gemini(system,prompt):await groq(system,prompt); return {data,provider:fallback==="gemini"?(process.env.GEMINI_MODEL||"gemini-2.5-flash-lite"):(process.env.GROQ_MODEL||"openai/gpt-oss-120b"),fallbackUsed:true}; }
+export async function generateResearchJson(
+  system:string,
+  prompt:string,
+  options?:{preferredProvider?:AIProvider;allowFallback?:boolean}
+){
+  const config=getAIConfiguration();
+  if(!config.configured) throw new Error("Configure GEMINI_API_KEY or GROQ_API_KEY in the server environment.");
+  const preferred=options?.preferredProvider??config.primary;
+  if(!config.available.includes(preferred)) {
+    if(options?.allowFallback===false) throw new Error(preferred.toUpperCase()+"_API_KEY is required for this AI task.");
+  }
+  const fallback:AIProvider=preferred==="gemini"?"groq":"gemini";
+  const run=async(provider:AIProvider)=>{
+    const data=provider==="gemini"?await gemini(system,prompt):await groq(system,prompt);
+    return {data,provider:provider==="gemini"?(process.env.GEMINI_MODEL||"gemini-2.5-flash-lite"):(process.env.GROQ_MODEL||"openai/gpt-oss-120b"),fallbackUsed:provider!==preferred};
+  };
+  try {
+    if(config.available.includes(preferred)) return await run(preferred);
+    return await run(fallback);
+  } catch(primaryError) {
+    if(options?.allowFallback===false||!config.available.includes(fallback)) throw primaryError;
+    return await run(fallback);
+  }
 }
