@@ -1,8 +1,8 @@
-import { NextRequest,NextResponse } from "next/server";
+import { NextResponse } from "next/server";
 import { randomBytes } from "node:crypto";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 export const runtime="nodejs";
-export async function GET(req:NextRequest){
+export async function GET(){
  const s=await createSupabaseServerClient();if(!s)return NextResponse.json({error:"Supabase is not configured."},{status:503});
  const {data:{user}}=await s.auth.getUser();if(!user)return NextResponse.json({error:"Unauthorized."},{status:401});
  const id=process.env.META_APP_ID,redirect=process.env.META_REDIRECT_URI;if(!id||!process.env.META_APP_SECRET||!redirect)return NextResponse.json({error:"Configure META_APP_ID, META_APP_SECRET and META_REDIRECT_URI."},{status:503});
