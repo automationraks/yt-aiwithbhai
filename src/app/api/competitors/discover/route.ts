@@ -31,6 +31,9 @@ type YouTubeChannel = {
 
 type Assessment = { channelId: string; confidenceScore: number; nicheRelevance: number; recommendation: string; reason: string; evidence: string[] };
 type RejectedLearningExample = { channelTitle: string; description: string | null; reviewNote: string | null; confidenceScore?: number; nicheRelevance?: number };
+function asRecord(value: unknown): Record<string, unknown> {
+ return typeof value === "object" && value !== null && !Array.isArray(value) ? value as Record<string, unknown> : {};
+}
 const assessmentRules = "You are a strict channel research analyst for AIWithBh@i. Discover BOTH (A) AI tools and technology coverage and (B) practical AI system design educators. Category A: timely, substantive coverage of newly released AI models, LLMs, APIs, developer tools, agent frameworks, orchestration platforms, coding assistants, inference providers, vector databases, evaluation/observability tools and cloud AI platforms. Include hands-on technical demos, comparisons, implementation guidance, release analysis and engineering implications; do not accept shallow hype, affiliate-only promotion or generic tool roundups. Category B (priority): scenario-driven system design for IT professionals, such as designing production RAG/search systems, multi-agent workflows, enterprise copilots, coding agents, multimodal applications, real-time voice agents, recommendation/personalization, document intelligence, AI gateways/model routing, scalable inference, GPU serving, caching, data pipelines, evals, guardrails, security, monitoring, cost/latency optimization, reliability and deployment. Strong channels may cover either category deeply or both; do not require every channel to cover both. Prefer recent sample videos and repeated technical depth over channel branding. Official channels from Anthropic, Meta, Groq, OpenAI, DeepSeek, AWS, Databricks, Snowflake, NVIDIA, Palantir, CrowdStrike, Apple, Alphabet/Google, Microsoft, Mistral and other relevant providers qualify when sample videos directly cover their AI tools, engineering, research or implementations. Reject children entertainment, nursery rhymes, songs, gaming, lifestyle, generic entertainment, unrelated tutorials and channels with only incidental AI mentions. Never infer fit from subscriber count or channel name alone. For each channel provide confidenceScore 0-100, nicheRelevance 0-100, recommendation strong_candidate/possible_candidate/unlikely_match, concise reason, and up to 3 evidence items. Score strong only when multiple samples or clear channel evidence show sustained relevant coverage; weak or ambiguous evidence must score 80 or below. Return ONLY JSON in this shape: {\"assessments\":[{\"channelId\":\"...\",\"confidenceScore\":0,\"nicheRelevance\":0,\"recommendation\":\"unlikely_match\",\"reason\":\"...\",\"evidence\":[\"...\"]}]}. Include every channelId exactly once.";
 function parseAssessments(raw: string, ids: string[]) {
  const cleaned=raw.replace(/^```(?:json)?\s*/i,"").replace(/\s*```$/,"").trim();
@@ -61,21 +64,24 @@ async function screenDiscoveryChannels(channels: YouTubeChannel[], samples: Map<
  const callGroq=async(prompt:string,ids:string[])=>{
   const model=process.env.GROQ_MODEL||"openai/gpt-oss-120b";
   let res: Response;
-  let data: any = {};
+  let data: Record<string, unknown> = {};
   for (let attempt = 0; attempt < 2; attempt++) {
    res=await fetch("https://api.groq.com/openai/v1/chat/completions",{method:"POST",headers:{"Content-Type":"application/json",Authorization:"Bearer "+process.env.GROQ_API_KEY!},body:JSON.stringify({model,temperature:0.1,max_tokens:500,response_format:{type:"json_object"},messages:[{role:"system",content:assessmentRules},{role:"user",content:prompt}]}),signal:AbortSignal.timeout(60000)});
-   data=await res.json().catch(()=>({}));
+   data=asRecord(await res.json().catch(()=>({})));
    if(res.ok) break;
    if(res.status!==429 || attempt===1) {
-    const error=new Error(data?.error?.message||"Groq screening failed ("+res.status+").") as Error & {status?:number;retryAfter?:string};
+    const errorMessage=asRecord(data.error).message;
+    const error=new Error((typeof errorMessage==="string"?errorMessage:undefined)||"Groq screening failed ("+res.status+").") as Error & {status?:number;retryAfter?:string};
     error.status=res.status; error.retryAfter=res.headers.get("retry-after")||undefined; throw error;
    }
    const retryAfter=Number(res.headers.get("retry-after")||"10");
    const delay=Number.isFinite(retryAfter)&&retryAfter>0?Math.min(retryAfter,30):10;
    await new Promise(resolve=>setTimeout(resolve,delay*1000));
   }
-  const out=data?.choices?.[0]?.message?.content; if(!out) throw new Error("Groq returned an empty screening result.");
-  return {assessments:parseAssessments(out,ids),provider:model};
+  const choices: unknown[]=Array.isArray(data.choices)?data.choices:[];
+  const content=asRecord(asRecord(choices[0]).message).content;
+  if(typeof content!=="string"||!content) throw new Error("Groq returned an empty screening result.");
+  return {assessments:parseAssessments(content,ids),provider:model};
  };
 
  for(const chunk of chunks) {
