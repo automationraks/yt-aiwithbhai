@@ -52,7 +52,7 @@ export async function GET(req:NextRequest){
       if(existingError)throw new Error("Checking previously seen uploads failed: "+existingError.message);
       const seen=new Set((alreadySaved??[]).map(x=>x.youtube_video_id));
       const rows=(v.items??[]).filter(x=>!seen.has(x.id)).map(x=>{
-       const match=x.contentDetails?.duration?.match(/^PT(?:(\\d+)H)?(?:(\\d+)M)?(?:(\\d+)S)?$/);
+       const match=x.contentDetails?.duration?.match(/^PT(?:([0-9]+)H)?(?:([0-9]+)M)?(?:([0-9]+)S)?$/);
        const duration=match?Number(match[1]??0)*3600+Number(match[2]??0)*60+Number(match[3]??0):0;
        return {owner_id:row.owner_id,competitor_id:row.competitor_id,youtube_video_id:x.id,title:x.snippet?.title??"Untitled video",description:(x.snippet?.description??"").slice(0,5000),published_at:x.snippet?.publishedAt??null,duration_seconds:duration,view_count:x.statistics?.viewCount??null,like_count:x.statistics?.likeCount??null,comment_count:x.statistics?.commentCount??null,is_short:duration<=180,thumbnail_url:x.snippet?.thumbnails?.high?.url??x.snippet?.thumbnails?.medium?.url??null,video_url:"https://www.youtube.com/watch?v="+x.id,language:x.snippet?.defaultLanguage??null,is_niche_relevant:false,niche_relevance_score:null,niche_relevance_reason:"Manually tracked upload; awaiting niche classification."};
       });
