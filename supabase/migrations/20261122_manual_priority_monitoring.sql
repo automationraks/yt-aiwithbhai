@@ -10,6 +10,10 @@ alter table public.manual_tracked_channels
   add column if not exists next_check_at timestamptz,
   add column if not exists last_error text;
 
+update public.manual_tracked_channels
+set monitoring_status = case when platform = 'youtube' then 'needs_resolution' else 'not_supported' end
+where youtube_channel_id is null;
+
 create index if not exists manual_tracked_channels_due_idx
   on public.manual_tracked_channels(platform, is_active, next_check_at)
   where platform = 'youtube' and is_active = true;
