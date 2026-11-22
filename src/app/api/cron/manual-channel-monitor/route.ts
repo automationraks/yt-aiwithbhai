@@ -45,9 +45,16 @@ export async function GET(req:NextRequest){
      const vids=[...new Set((p.items??[]).map(x=>x.contentDetails?.videoId).filter((x):x is string=>Boolean(x)))];
      if(vids.length){
       await reserve(s);
-      const v=await yt<{items?:Array<{id:string;snippet?:{title?:string;description?:string;publishedAt?:string;defaultLanguage?:string;thumbnails?:{high?:{url?:string};medium?:{url?:string}}};statistics?:{viewCount?:string;likeCount?:string;commentCount?:string}}}>("videos",{part:"snippet,statistics",id:vids.join(","),maxResults:"50"});
-      const rows=(v.items??[]).map(x=>({owner_id:row.owner_id,competitor_id:row.competitor_id,youtube_video_id:x.id,title:x.snippet?.title??"Untitled video",description:(x.snippet?.description??"").slice(0,5000),published_at:x.snippet?.publishedAt??null,duration_seconds:0,view_count:x.statistics?.viewCount??null,like_count:x.statistics?.likeCount??null,comment_count:x.statistics?.commentCount??null,is_short:false,thumbnail_url:x.snippet?.thumbnails?.high?.url??x.snippet?.thumbnails?.medium?.url??null,video_url:"https://www.youtube.com/watch?v="+x.id,language:x.snippet?.defaultLanguage??null,is_niche_relevant:false,niche_relevance_score:null,niche_relevance_reason:"Manually tracked upload; awaiting niche classification."}));
-      if(rows.length){const save=await s.from("videos").upsert(rows,{onConflict:"owner_id,youtube_video_id"});if(save.error)throw new Error(save.error.message);newUploads+=rows.length;}
+      const v=await yt<{items?:Array<{id:string;snippet?:{title?:string;description?:string;publishedAt?:string;defaultLanguage?:string;thumbnails?:{high?:{url?:string};medium?:{url?:string}}};contentDetails?:{duration?:string};statistics?:{viewCount?:string;likeCount?:string;commentCount?:string}}}>("videos",{part:"snippet,contentDetails,statistics",id:vids.join(","),maxResults:"50"});
+      const {data:alreadySaved,error:existingError}=await s.from("videos").select("youtube_video_id").eq("owner_id",row.owner_id).in("youtube_video_id",vids);
+      if(existingError)throw new Error("Checking previously seen uploads failed: "+existingError.message);
+      const seen=new Set((alreadySaved??[]).map(x=>x.youtube_video_id));
+      const rows=(v.items??[]).filter(x=>!seen.has(x.id)).map(x=>{
+       const match=x.contentDetails?.duration?.match(/^PT(?:(\\d+)H)?(?:(\\d+)M)?(?:(\\d+)S)?$/);
+       const duration=match?Number(match[1]??0)*3600+Number(match[2]??0)*60+Number(match[3]??0):0;
+       return {owner_id:row.owner_id,competitor_id:row.competitor_id,youtube_video_id:x.id,title:x.snippet?.title??"Untitled video",description:(x.snippet?.description??"").slice(0,5000),published_at:x.snippet?.publishedAt??null,duration_seconds:duration,view_count:x.statistics?.viewCount??null,like_count:x.statistics?.likeCount??null,comment_count:x.statistics?.commentCount??null,is_short:duration<=180,thumbnail_url:x.snippet?.thumbnails?.high?.url??x.snippet?.thumbnails?.medium?.url??null,video_url:"https://www.youtube.com/watch?v="+x.id,language:x.snippet?.defaultLanguage??null,is_niche_relevant:false,niche_relevance_score:null,niche_relevance_reason:"Manually tracked upload; awaiting niche classification."};
+      });
+      if(rows.length){const save=await s.from("videos").insert(rows);if(save.error)throw new Error(save.error.message);newUploads+=rows.length;}
      }
     }
     await s.from("manual_tracked_channels").update({monitoring_status:"monitored",last_checked_at:now,next_check_at:new Date(Date.now()+86400000).toISOString(),last_error:null}).eq("id",row.id);
