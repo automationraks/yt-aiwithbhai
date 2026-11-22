@@ -275,7 +275,7 @@ export async function POST(request: NextRequest) {
 
     // Exclude channels whose own identity clearly belongs to a disallowed vertical.
     // A single off-topic sample is not enough to reject a mixed-topic creator.
-    const hardExcludedTopic = /\b(?:kids?|children|childrens|nursery|cartoons?|toy|preschool|baby songs?|stock market|share market|stock trading|share trading|trading|day trading|intraday|nifty|sensex|options trading|crypto trading|investing|investment tips|stock tips)\b/i;
+    const hardExcludedTopic = /\b(?:kids?|children|childrens|nursery|cartoons?|toy unboxing|toy reviews?|preschool|baby songs?|बालगीत|बच्चों|बच्चो|stock market|share market|stock trading|share trading|trading|day trading|intraday|nifty|sensex|options trading|crypto trading|investing|investment tips|stock tips|शेयर बाजार|शेयर मार्केट|स्टॉक मार्केट|ट्रेडिंग)\b/i;
     const topicExcludedIds = new Set(channels.filter((channel) =>
       hardExcludedTopic.test((channel.snippet?.title ?? "") + " " + (channel.snippet?.description ?? ""))
     ).map((channel) => channel.id));
