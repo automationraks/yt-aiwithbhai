@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createClient } from "@supabase/supabase-js";
+import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 export const runtime="nodejs";
 export const dynamic="force-dynamic";
 export const maxDuration=60;
@@ -12,11 +12,16 @@ async function yt<T>(resource:string,params:Record<string,string>):Promise<T>{
  const url=new URL(API+"/"+resource);Object.entries({...params,key}).forEach(([k,v])=>url.searchParams.set(k,v));
  const r=await fetch(url,{cache:"no-store",signal:AbortSignal.timeout(12000)});const d=await r.json().catch(()=>({}));if(!r.ok)throw new Error(d?.error?.message||"YouTube API failed");return d as T;
 }
-// Supabase RPC generics are not generated for this project schema.\n// eslint-disable-next-line @typescript-eslint/no-explicit-any\nasync function reserve(s:any){const r=await s.rpc("reserve_youtube_quota_cron",{p_bucket:"general",p_amount:1});if(r.error)throw new Error(r.error.message);if(!(r.data as {allowed?:boolean}|null)?.allowed)throw new Error("YouTube general quota exhausted");}
+// Supabase RPC generics are not generated for this project schema.
+async function reserve(s: SupabaseClient){
+ const r=await s.rpc("reserve_youtube_quota_cron",{p_bucket:"general",p_amount:1});
+ if(r.error)throw new Error(r.error.message);
+ if(!(r.data as {allowed?:boolean}|null)?.allowed)throw new Error("YouTube general quota exhausted");
+}
 export async function GET(req:NextRequest){
  const secret=process.env.CRON_SECRET;if(!secret||req.headers.get("authorization")!==`Bearer ${secret}`)return NextResponse.json({error:"Unauthorized"},{status:401});
  const url=process.env.NEXT_PUBLIC_SUPABASE_URL,key=process.env.SUPABASE_SERVICE_ROLE_KEY;if(!url||!key||!process.env.YOUTUBE_API_KEY)return NextResponse.json({error:"Missing Supabase service role or YouTube API configuration"},{status:503});
- // eslint-disable-next-line @typescript-eslint/no-explicit-any\n const s=createClient<any>(url,key,{auth:{persistSession:false,autoRefreshToken:false}});
+ const s=createClient(url,key,{auth:{persistSession:false,autoRefreshToken:false}});
  try{
   const now=new Date().toISOString();
   const{data:due,error}=await s.from("manual_tracked_channels").select("id,owner_id,youtube_channel_id,competitor_id").eq("platform","youtube").eq("is_active",true).not("youtube_channel_id","is",null).or(`next_check_at.is.null,next_check_at.lte.${now}`).order("next_check_at",{ascending:true,nullsFirst:true}).limit(LIMIT);
