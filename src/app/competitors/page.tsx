@@ -22,7 +22,7 @@ type Competitor = {
   ai_production_evidence: { sampleVideos?: SampleVideo[]; aiScreening?: AIScreening; confidenceScore?: number; nicheRelevance?: number } | null;
   ai_production_review_note: string | null;
 };
-type DiscoveryQuotaBucket = { remaining: number };
+type ManualLink = { id:string; platform:"youtube"|"instagram"; url:string; display_name:string; is_active:boolean };\ntype DiscoveryQuotaBucket = { remaining: number };
 type DiscoveryResult = {
   saved?: number;
   channelsDiscovered?: number;
@@ -73,7 +73,7 @@ function dateLabel(value: string | null) {
 }
 
 export default function CompetitorExplorerPage() {
-  const [competitors, setCompetitors] = useState<Competitor[]>([]);
+  const [competitors, setCompetitors] = useState<Competitor[]>([]);\n  const [manualLinks,setManualLinks]=useState<ManualLink[]>([]);\n  const [manualUrl,setManualUrl]=useState("");\n  const [manualName,setManualName]=useState("");\n  const [manualBusy,setManualBusy]=useState(false);
   const [language, setLanguage] = useState<"hi" | "en">("en");
   const [keywords, setKeywords] = useState(defaultKeywords);
   const [filter, setFilter] = useState<"all" | "active" | "paused">("all");
@@ -93,7 +93,7 @@ export default function CompetitorExplorerPage() {
       const response = await fetch("/api/competitors/refresh", { method: "POST", cache: "no-store" });
       const result = await response.json();
       if (!response.ok) throw new Error(result.error || "Could not load competitors.");
-      const rows: Competitor[] = result.competitors ?? [];
+      const rows: Competitor[] = result.competitors ?? [];\n      const manualResponse=await fetch("/api/manual-tracked-channels",{cache:"no-store"});\n      const manualResult=await manualResponse.json();\n      if(!manualResponse.ok) throw new Error(manualResult.error||"Could not load manually tracked links.");\n      setManualLinks(manualResult.items??[]);
       // Keep rejected and explicitly low-confidence candidates out of the refreshed list.
       // Records remain in Supabase so review history is preserved.
       const visibleRows = rows.filter((item) => {
@@ -123,6 +123,9 @@ export default function CompetitorExplorerPage() {
     const term = search.trim().toLowerCase();
     return matchesFilter && (!term || item.channel_title.toLowerCase().includes(term) || item.youtube_channel_id.toLowerCase().includes(term));
   }), [competitors, filter, search]);
+
+  async function addManualLink(){setManualBusy(true);setError("");setNotice("");try{const response=await fetch("/api/manual-tracked-channels",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({url:manualUrl,display_name:manualName})});const result=await response.json();if(!response.ok)throw new Error(result.error||"Could not add link.");setManualLinks(current=>[result.item,...current.filter(x=>x.id!==result.item.id)]);setManualUrl("");setManualName("");setNotice("Social channel link added to your manual tracking list.");}catch(err){setError(err instanceof Error?err.message:"Could not add link.");}finally{setManualBusy(false);}}
+  async function removeManualLink(id:string){try{const response=await fetch("/api/manual-tracked-channels?id="+encodeURIComponent(id),{method:"DELETE"});const result=await response.json();if(!response.ok)throw new Error(result.error||"Could not remove link.");setManualLinks(current=>current.filter(x=>x.id!==id));}catch(err){setError(err instanceof Error?err.message:"Could not remove link.");}}
 
   async function discover() {
     const keywordList = Array.from(new Set(keywords.split(/[\n,]/).map((item) => item.trim()).filter(Boolean)));
@@ -220,6 +223,12 @@ export default function CompetitorExplorerPage() {
 
     {error && <div className="mb-4 flex items-start gap-2 rounded-lg border border-red-500/30 bg-red-500/10 p-3 text-sm text-red-300"><AlertCircle size={16} className="mt-0.5 shrink-0"/><span>{error}</span></div>}
     {notice && <div className="mb-4 rounded-lg border border-emerald-500/20 bg-emerald-500/10 p-3 text-sm text-emerald-300">{notice}{lastDiscovery?.quota?.search && lastDiscovery.quota.general && <div className="mt-1 text-xs text-emerald-200/70">Search quota remaining: {lastDiscovery.quota.search.remaining} · General units remaining: {lastDiscovery.quota.general.remaining}</div>}</div>}
+
+    <section className="mb-6 rounded-xl border border-cyan-500/20 bg-[#111925] p-5">
+      <div className="mb-3"><h2 className="text-sm font-semibold">Manually tracked social channels</h2><p className="mt-1 text-xs text-slate-400">Add public YouTube or Instagram profile, channel, video or post links. These are saved separately from AI-discovered YouTube competitors.</p></div>
+      <div className="grid gap-3 md:grid-cols-[1fr_220px_auto]"><input value={manualUrl} onChange={e=>setManualUrl(e.target.value)} placeholder="Paste YouTube or Instagram URL" className="rounded-lg border border-slate-700 bg-[#0b121d] px-3 py-2 text-sm"/><input value={manualName} onChange={e=>setManualName(e.target.value)} placeholder="Display name (optional)" className="rounded-lg border border-slate-700 bg-[#0b121d] px-3 py-2 text-sm"/><button onClick={()=>void addManualLink()} disabled={manualBusy||!manualUrl.trim()} className="rounded-lg bg-cyan-500 px-4 py-2 text-sm font-semibold text-slate-950 disabled:opacity-50">{manualBusy?"Adding...":"Add link"}</button></div>
+      {manualLinks.length>0&&<div className="mt-4 space-y-2">{manualLinks.map(link=><div key={link.id} className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-slate-800 bg-[#0b121d] px-3 py-2"><div className="min-w-0"><span className="mr-2 rounded bg-slate-800 px-2 py-1 text-[10px] uppercase text-cyan-300">{link.platform}</span><span className="text-xs font-medium">{link.display_name}</span><a href={link.url} target="_blank" rel="noreferrer" className="ml-2 break-all text-[10px] text-sky-300 underline">{link.url}</a></div><button onClick={()=>void removeManualLink(link.id)} className="text-xs text-red-300 hover:text-red-200">Remove</button></div>)}</div>}
+    </section>
 
     <section className="overflow-hidden rounded-xl border border-slate-800 bg-[#111925]">
       <div className="flex flex-col justify-between gap-3 border-b border-slate-800 p-4 md:flex-row md:items-center"><div><h2 className="text-sm font-semibold">Tracked channels</h2><p className="mt-1 text-xs text-slate-400">Pause channels to free active slots without deleting their records.</p></div><div className="flex flex-wrap gap-2"><div className="relative"><Search size={14} className="absolute left-3 top-2.5 text-slate-500"/><input value={search} onChange={(event)=>setSearch(event.target.value)} placeholder="Find channel..." className="w-full rounded-lg border border-slate-700 bg-[#0b121d] py-2 pl-8 pr-3 text-xs outline-none focus:border-cyan-500 sm:w-52"/></div><select value={filter} onChange={(event)=>setFilter(event.target.value as typeof filter)} className="rounded-lg border border-slate-700 bg-[#0b121d] px-3 py-2 text-xs"><option value="all">All channels</option><option value="active">Active</option><option value="paused">Paused</option></select></div></div>
