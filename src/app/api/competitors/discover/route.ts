@@ -158,6 +158,31 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: `Provide language "hi" or "en" and at least one keyword (maximum 80 characters each).` }, { status: 400 });
   }
 
+  // YouTube search.list costs 100 quota units per request. Combine related
+  // phrases with YouTube's OR operator and cap discovery at four search calls.
+  const MAX_SEARCH_REQUESTS = 4;
+  const MAX_QUERY_LENGTH = 450;
+  const searchQueries: string[] = [];
+  let queryTerms: string[] = [];
+  for (const keyword of keywords) {
+    const term = `"${keyword.replace(/"/g, "").trim()}"`;
+    const candidate = [...queryTerms, term].join("|");
+    if (candidate.length > MAX_QUERY_LENGTH && queryTerms.length) {
+      searchQueries.push(queryTerms.join("|"));
+      queryTerms = [term];
+    } else {
+      queryTerms.push(term);
+    }
+  }
+  if (queryTerms.length) searchQueries.push(queryTerms.join("|"));
+  if (searchQueries.length > MAX_SEARCH_REQUESTS) {
+    return NextResponse.json({
+      error: `These keywords require ${searchQueries.length} search groups. Reduce the keyword list or use at most ${MAX_SEARCH_REQUESTS} groups (each query is limited to ${MAX_QUERY_LENGTH} characters).`,
+      searchGroupsRequired: searchQueries.length,
+      maximumSearchRequests: MAX_SEARCH_REQUESTS,
+    }, { status: 400 });
+  }
+
   const { count, error: countError } = await supabase.from("competitors").select("id", { count: "exact", head: true }).eq("owner_id", user.id).eq("is_active", true);
   if (countError) return NextResponse.json({ error: "Could not check your active competitor limit." }, { status: 500 });
 
@@ -166,11 +191,12 @@ export async function POST(request: NextRequest) {
     const channelIds = new Set<string>();
 
     // Search for videos that indicate the desired format, not channels merely discussing AI.
-    for (const keyword of keywords) {
+    // OR-grouping preserves keyword coverage while reducing 30+ requests to at most four.
+    for (const searchQuery of searchQueries) {
       const reservation = await reserveQuota(supabase, "search");
       if (!reservation.allowed) return NextResponse.json({ error: "Daily YouTube search request limit reached.", quota: reservation }, { status: 429 });
-      const search = await youtubeGet<{ items?: Array<{ id?: { videoId?: string }; snippet?: { channelId?: string; title?: string; description?: string; channelTitle?: string; publishedAt?: string; thumbnails?: { medium?: { url?: string }; default?: { url?: string } } } }> }>("search", {
-        part: "snippet", type: "video", maxResults: "25", q: keyword, relevanceLanguage: language, order: "relevance", videoDuration: "medium",
+      const search = await youtubeGet<{ items?: Array<{ id?: { videoId?: string }; snippet?: { channelId?: string; title?: string; description?: string; channelTitle?: string; publishedAt?: string; thumbnails?: { medium?: { url?: string }; default?: { url?: string } } }> }>("search", {
+        part: "snippet", type: "video", maxResults: "25", q: searchQuery, relevanceLanguage: language, order: "relevance", videoDuration: "medium",
       });
       for (const item of search.items ?? []) {
         const channelId = item.snippet?.channelId;
@@ -184,7 +210,7 @@ export async function POST(request: NextRequest) {
           channelTitle: item.snippet?.channelTitle ?? "",
           publishedAt: item.snippet?.publishedAt ?? null,
           thumbnailUrl: item.snippet?.thumbnails?.medium?.url ?? item.snippet?.thumbnails?.default?.url ?? null,
-          matchedQuery: keyword,
+          matchedQuery: searchQuery,
           videoUrl: videoId ? `https://www.youtube.com/watch?v=${videoId}` : null,
         };
         const list = samplesByChannel.get(channelId) ?? [];
@@ -283,7 +309,7 @@ export async function POST(request: NextRequest) {
 
     const { data: quota } = await supabase.rpc("get_youtube_quota_status");
     return NextResponse.json({
-      searchedKeywords: keywords, language, channelsDiscovered: channelIds.size,
+      searchedKeywords: keywords, searchQueriesUsed: searchQueries, youtubeSearchRequests: searchQueries.length, language, channelsDiscovered: channelIds.size,
       channelsAIassessed: assessments.size,
       priorRejectedExamplesUsed: rejectedExamples.length,
       previouslyRejectedChannelsSkipped: rejectedIds.size,
