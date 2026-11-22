@@ -17,6 +17,7 @@ async function gemini(system: string, prompt: string): Promise<unknown> {
       input: prompt,
       system_instruction: system,
       generation_config: { max_output_tokens: 2500, thinking_level: "minimal" },
+      response_format: { type: "text", mime_type: "application/json" },
       store: false,
     }),
     signal: AbortSignal.timeout(60000),
@@ -54,7 +55,7 @@ export async function generateResearchJson(
   const fallback:AIProvider=preferred==="gemini"?"groq":"gemini";
   const run=async(provider:AIProvider)=>{
     const data=provider==="gemini"?await gemini(system,prompt):await groq(system,prompt);
-    return {data,provider:provider==="gemini"?(process.env.GEMINI_MODEL||"gemini-2.5-flash-lite"):(process.env.GROQ_MODEL||"openai/gpt-oss-120b"),fallbackUsed:provider!==preferred};
+    return {data,provider:provider==="gemini"?(process.env.GEMINI_MODEL||"gemini-3.5-flash-lite"):(process.env.GROQ_MODEL||"openai/gpt-oss-120b"),fallbackUsed:provider!==preferred};
   };
   try {
     if(config.available.includes(preferred)) return await run(preferred);
