@@ -22,7 +22,8 @@ type Competitor = {
   ai_production_evidence: { sampleVideos?: SampleVideo[]; aiScreening?: AIScreening; confidenceScore?: number; nicheRelevance?: number } | null;
   ai_production_review_note: string | null;
 };
-type ManualLink = { id:string; platform:"youtube"|"instagram"; url:string; display_name:string; is_active:boolean };\ntype DiscoveryQuotaBucket = { remaining: number };
+type ManualLink = { id:string; platform:"youtube"|"instagram"; url:string; display_name:string; is_active:boolean };
+type DiscoveryQuotaBucket = { remaining: number };
 type DiscoveryResult = {
   saved?: number;
   channelsDiscovered?: number;
@@ -73,7 +74,11 @@ function dateLabel(value: string | null) {
 }
 
 export default function CompetitorExplorerPage() {
-  const [competitors, setCompetitors] = useState<Competitor[]>([]);\n  const [manualLinks,setManualLinks]=useState<ManualLink[]>([]);\n  const [manualUrl,setManualUrl]=useState("");\n  const [manualName,setManualName]=useState("");\n  const [manualBusy,setManualBusy]=useState(false);
+  const [competitors, setCompetitors] = useState<Competitor[]>([]);
+  const [manualLinks,setManualLinks]=useState<ManualLink[]>([]);
+  const [manualUrl,setManualUrl]=useState("");
+  const [manualName,setManualName]=useState("");
+  const [manualBusy,setManualBusy]=useState(false);
   const [language, setLanguage] = useState<"hi" | "en">("en");
   const [keywords, setKeywords] = useState(defaultKeywords);
   const [filter, setFilter] = useState<"all" | "active" | "paused">("all");
@@ -93,7 +98,11 @@ export default function CompetitorExplorerPage() {
       const response = await fetch("/api/competitors/refresh", { method: "POST", cache: "no-store" });
       const result = await response.json();
       if (!response.ok) throw new Error(result.error || "Could not load competitors.");
-      const rows: Competitor[] = result.competitors ?? [];\n      const manualResponse=await fetch("/api/manual-tracked-channels",{cache:"no-store"});\n      const manualResult=await manualResponse.json();\n      if(!manualResponse.ok) throw new Error(manualResult.error||"Could not load manually tracked links.");\n      setManualLinks(manualResult.items??[]);
+      const rows: Competitor[] = result.competitors ?? [];
+      const manualResponse=await fetch("/api/manual-tracked-channels",{cache:"no-store"});
+      const manualResult=await manualResponse.json();
+      if(!manualResponse.ok) throw new Error(manualResult.error||"Could not load manually tracked links.");
+      setManualLinks(manualResult.items??[]);
       // Keep rejected and explicitly low-confidence candidates out of the refreshed list.
       // Records remain in Supabase so review history is preserved.
       const visibleRows = rows.filter((item) => {

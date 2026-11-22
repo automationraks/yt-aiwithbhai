@@ -2,6 +2,11 @@ import { NextResponse } from "next/server";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { generateResearchJson } from "@/lib/ai/research";
 export const runtime="nodejs";export const dynamic="force-dynamic";
+type GeneratedContent={
+ researchConfidence?:number;scriptConfidence?:number;sourceReferences?:Array<Record<string,unknown>>;
+ contentGap?:string;differentiation?:string;outline?:Array<Record<string,unknown>>;hook?:string;
+ script?:string;curiosityLoops?:unknown[];
+};
 export async function POST(_req:Request,{params}:{params:Promise<{id:string}>}){
  const {id}=await params;const s=await createSupabaseServerClient();if(!s)return NextResponse.json({error:"Supabase is not configured."},{status:503});
  const {data:{user},error:a}=await s.auth.getUser();if(a||!user)return NextResponse.json({error:"Unauthorized."},{status:401});
@@ -16,7 +21,7 @@ export async function POST(_req:Request,{params}:{params:Promise<{id:string}>}){
  const system=`You are the research editor and high-retention YouTube Shorts writer for AIWithBh@i. Audience: software engineers and IT professionals. Create ONLY a 50-60 second short, target 55 seconds, approximately 115-145 spoken words. Research must be evidence-grounded. Return JSON: {researchConfidence:0-100,scriptConfidence:0-100,researchSummary:"",keyFacts:[...],sourceReferences:[{title,url,sourceType}],contentGap:"",differentiation:"",outline:[{time:"0-3s",purpose:"",visual:"",narration:""}],hook:"",script:"",curiosityLoops:[...],endingPayoff:"",estimatedDurationSeconds:55}. Confidence means evidence quality and script-to-brief alignment, not a guarantee of performance. Only assign scores above 80 when sources directly support the key claims and the story is coherent; otherwise return lower scores and explain missing evidence. Script structure: 0-3s pattern-breaking hook with a concrete tension; 3-10s establish stakes and open a question; 10-40s deliver escalating useful steps while opening and closing curiosity loops; 40-52s reveal payoff/trade-off; 52-60s concise takeaway/CTA. No slow intro, generic greetings, filler, fake statistics, unsupported claims or copied competitor wording. Use a single clear narrative, spoken natural language, visual changes every 2-4 seconds, and make the ending resolve the opening question. If evidence is insufficient, do not fabricate: score below 81.`;
  try{
   const result=await generateResearchJson(system,JSON.stringify({topic:item.title,targetDurationSeconds:55,activeQualifiedCompetitorVideos:refs,architectureTrends:trends??[],existingContentOpportunities:ideas??[],instruction:"Use supplied research only. Cite exact supplied URLs. Do not imply competitor views prove audience demand."}));
-  const d=result.data as any;const researchScore=Math.max(0,Math.min(100,Number(d.researchConfidence)||0));const scriptScore=Math.max(0,Math.min(100,Number(d.scriptConfidence)||0));
+  const d=result.data as GeneratedContent;const researchScore=Math.max(0,Math.min(100,Number(d.researchConfidence)||0));const scriptScore=Math.max(0,Math.min(100,Number(d.scriptConfidence)||0));
   const brief={owner_id:user.id,calendar_id:id,research_snapshot:{topic:item.title,competitorVideos:refs,trends:trends??[],opportunities:ideas??[]},source_references:Array.isArray(d.sourceReferences)?d.sourceReferences:[],competitor_insights:refs.slice(0,20),trend_insights:trends??[],content_gaps:[d.contentGap??""],differentiation_strategy:String(d.differentiation??""),confidence_score:researchScore};
   const {error:be}=await s.from("content_research_briefs").insert(brief);if(be)throw new Error("Could not save research brief: "+be.message);
   if(researchScore<81||scriptScore<81){await s.from("content_calendar").update({status:"research_ready",research_confidence:researchScore,script_confidence:scriptScore}).eq("id",id).eq("owner_id",user.id);return NextResponse.json({accepted:false,researchConfidence:researchScore,scriptConfidence:scriptScore,reason:"Confidence must exceed 80%. Improve or refresh the research before script approval.",brief});}
