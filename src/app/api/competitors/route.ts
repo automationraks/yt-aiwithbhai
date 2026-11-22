@@ -38,7 +38,7 @@ export async function PATCH(request: NextRequest) {
       return NextResponse.json({ error: "Invalid AI-production review status." }, { status: 400 });
     }
     const { data: current, error: currentError } = await supabase.from("competitors")
-      .select("is_active,ai_production_status").eq("id", body.id).eq("owner_id", user.id).maybeSingle();
+      .select("is_active,ai_production_status,is_manual_priority").eq("id", body.id).eq("owner_id", user.id).maybeSingle();
     if (currentError || !current) return NextResponse.json({ error: "Competitor not found." }, { status: 404 });
     if (body.ai_production_status === "qualified" && !current.is_active) {
       const { count, error: countError } = await supabase.from("competitors")
@@ -71,7 +71,7 @@ export async function PATCH(request: NextRequest) {
   }
 
   if (body.is_active) {
-    const { data: current, error: currentError } = await supabase.from("competitors").select("is_active,ai_production_status").eq("id", body.id).eq("owner_id", user.id).maybeSingle();
+    const { data: current, error: currentError } = await supabase.from("competitors").select("is_active,ai_production_status,is_manual_priority").eq("id", body.id).eq("owner_id", user.id).maybeSingle();
     if (currentError || !current) return NextResponse.json({ error: "Competitor not found." }, { status: 404 });
     if (current.ai_production_status !== "qualified") return NextResponse.json({ error: "Approve this channel first. Only approved channels can be activated." }, { status: 409 });
     const { count, error: countError } = await supabase.from("competitors").select("id", { count: "exact", head: true }).eq("owner_id", user.id).eq("is_active", true).eq("ai_production_status", "qualified");
@@ -87,6 +87,11 @@ export async function PATCH(request: NextRequest) {
   }).eq("id", body.id).eq("owner_id", user.id).select("id,is_active,user_tracking_preference,last_user_action,last_user_action_at").maybeSingle();
   if (error) return NextResponse.json({ error: "Could not update competitor.", details: error.message }, { status: 500 });
   if (!data) return NextResponse.json({ error: "Competitor not found." }, { status: 404 });
+  const { data: priorityLink } = await supabase.from("manual_tracked_channels").select("id").eq("owner_id", user.id).eq("competitor_id", data.id).eq("platform", "youtube").maybeSingle();
+  if (priorityLink) {
+    const { error: manualError } = await supabase.from("manual_tracked_channels").update({ is_active: body.is_active, monitoring_status: body.is_active ? "queued" : "paused" }).eq("id", priorityLink.id);
+    if (manualError) return NextResponse.json({ error: "Tracking changed, but manual priority schedule could not be updated.", details: manualError.message }, { status: 500 });
+  }
   const { error: logError } = await supabase.from("competitor_action_log").insert({ owner_id: user.id, competitor_id: data.id, action, details: { is_active: data.is_active } });
   if (logError) return NextResponse.json({ error: "Tracking updated, but action history could not be saved.", details: logError.message }, { status: 500 });
   return NextResponse.json({ competitor: data });
