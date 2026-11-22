@@ -4,11 +4,36 @@ function parseJson(text: string): unknown {
   try { return JSON.parse(cleaned); } catch { const start = cleaned.indexOf("{"); const end = cleaned.lastIndexOf("}"); if (start >= 0 && end > start) return JSON.parse(cleaned.slice(start, end + 1)); throw new Error("AI provider returned invalid JSON."); }
 }
 async function gemini(system: string, prompt: string): Promise<unknown> {
-  const key = process.env.GEMINI_API_KEY; if (!key) throw new Error("GEMINI_API_KEY is not configured.");
-  const model = process.env.GEMINI_MODEL || "gemini-2.5-flash-lite";
-  const response = await fetch("https://generativelanguage.googleapis.com/v1beta/models/" + model + ":generateContent", { method:"POST", headers:{"Content-Type":"application/json","x-goog-api-key":key}, body:JSON.stringify({systemInstruction:{parts:[{text:system}]},contents:[{role:"user",parts:[{text:prompt}]}],generationConfig:{responseMimeType:"application/json",temperature:0.25,maxOutputTokens:7000}}), signal:AbortSignal.timeout(60000) });
-  const payload = await response.json().catch(() => ({})); if (!response.ok) throw new Error(payload?.error?.message || "Gemini request failed (" + response.status + ").");
-  const output = payload?.candidates?.[0]?.content?.parts?.map((part:{text?:string})=>part.text ?? "").join(""); if (!output) throw new Error("Gemini returned an empty response."); return parseJson(output);
+  const key = process.env.GEMINI_API_KEY;
+  if (!key) throw new Error("GEMINI_API_KEY is not configured.");
+  // Gemini 3.5 Flash-Lite is served through the Interactions API, not the
+  // legacy /models/{model}:generateContent endpoint.
+  const model = process.env.GEMINI_MODEL || "gemini-3.5-flash-lite";
+  const response = await fetch("https://generativelanguage.googleapis.com/v1beta/interactions", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", "x-goog-api-key": key },
+    body: JSON.stringify({
+      model,
+      input: prompt,
+      system_instruction: system,
+      generation_config: { max_output_tokens: 2500, thinking_level: "minimal" },
+      store: false,
+    }),
+    signal: AbortSignal.timeout(60000),
+  });
+  const payload = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error(payload?.error?.message || payload?.message || "Gemini Interactions request failed (" + response.status + ").");
+  const stepText = Array.isArray(payload?.steps)
+    ? payload.steps.filter((step: { type?: string }) => step?.type === "model_output")
+      .flatMap((step: { content?: Array<{ type?: string; text?: string }> }) => Array.isArray(step.content) ? step.content : [])
+      .filter((part: { type?: string; text?: string }) => part?.type === "text" && typeof part.text === "string")
+      .map((part: { text: string }) => part.text).join("\\n")
+    : "";
+  const output = typeof payload?.output_text === "string" && payload.output_text
+    ? payload.output_text
+    : stepText || (Array.isArray(payload?.outputs) ? payload.outputs.map((item: { text?: string }) => item?.text ?? "").join("\\n") : "");
+  if (!output) throw new Error("Gemini Interactions API returned no text output.");
+  return parseJson(output);
 }
 async function groq(system:string,prompt:string):Promise<unknown>{
   const key=process.env.GROQ_API_KEY; if(!key) throw new Error("GROQ_API_KEY is not configured."); const model=process.env.GROQ_MODEL || "openai/gpt-oss-120b";
