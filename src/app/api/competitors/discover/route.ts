@@ -267,6 +267,12 @@ export async function POST(request: NextRequest) {
       };
     });
 
+    // Manually reviewed channels are already approved; never spend AI screening calls on them.
+    const { data: manualPriorityRows, error: manualPriorityError } = await supabase.from("competitors")
+      .select("youtube_channel_id").eq("owner_id", user.id).eq("is_manual_priority", true);
+    if (manualPriorityError) return NextResponse.json({ error: "Could not load manual priority channels.", details: manualPriorityError.message }, { status: 500 });
+    const manualPriorityIds = new Set((manualPriorityRows ?? []).map((row) => row.youtube_channel_id));
+
     // Exclude channels whose own identity clearly belongs to a disallowed vertical.
     // A single off-topic sample is not enough to reject a mixed-topic creator.
     const hardExcludedTopic = /\b(?:kids? channel|children'?s? channel|nursery rhymes?|toy unboxing|preschool learning|baby songs?|stock market|share market|trading channel|day trading|intraday trading|nifty|sensex|options trading|crypto trading|investment tips)\b/i;
@@ -274,7 +280,7 @@ export async function POST(request: NextRequest) {
       hardExcludedTopic.test((channel.snippet?.title ?? "") + " " + (channel.snippet?.description ?? ""))
     ).map((channel) => channel.id));
     const candidates = channels
-      .filter((channel) => channel.id && channel.snippet?.title && !rejectedIds.has(channel.id) && !topicExcludedIds.has(channel.id))
+      .filter((channel) => channel.id && channel.snippet?.title && !rejectedIds.has(channel.id) && !manualPriorityIds.has(channel.id) && !topicExcludedIds.has(channel.id))
       .sort((a, b) => (samplesByChannel.get(b.id)?.length ?? 0) - (samplesByChannel.get(a.id)?.length ?? 0));
     const { assessments, provider: screeningProvider } = await screenDiscoveryChannels(candidates, samplesByChannel, rejectedExamples);
     const eligible = candidates.filter((channel) => {
@@ -335,6 +341,7 @@ export async function POST(request: NextRequest) {
       searchedKeywords: keywords, searchQueriesUsed: searchQueries, youtubeSearchRequests: searchQueries.length, language, channelsDiscovered: channelIds.size,
       channelsAIassessed: assessments.size,
       channelsExcludedByTopic: topicExcludedIds.size,
+      manuallyApprovedChannelsSkipped: manualPriorityIds.size,
       priorRejectedExamplesUsed: rejectedExamples.length,
       previouslyRejectedChannelsSkipped: rejectedIds.size,
       channelsPassingConfidenceThreshold: eligible.length,
