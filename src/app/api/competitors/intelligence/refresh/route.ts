@@ -53,7 +53,9 @@ async function assessNicheVideos(videos: VideoItem[]) {
       title: (video.snippet?.title ?? "").slice(0, 180),
       description: (video.snippet?.description ?? "").slice(0, 350),
     }));
-    const result = await generateResearchJson(system, JSON.stringify({ channel: "AIWithBh@i", videos: compact }));
+    // Video Explorer must not compete for Groq's shared 8K TPM pool.
+    // Gemini is selected explicitly; no Groq fallback for this workload.
+    const result = await generateResearchJson(system, JSON.stringify({ channel: "AIWithBh@i", videos: compact }), { preferredProvider: "gemini", allowFallback: false });
     const raw = result.data as { assessments?: Array<Record<string, unknown>> };
     const valid = new Set(batch.map((video) => video.id));
     for (const item of Array.isArray(raw.assessments) ? raw.assessments : []) {
