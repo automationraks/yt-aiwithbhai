@@ -3,7 +3,7 @@ import { createSupabaseServerClient } from "@/lib/supabase/server";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 const API = "https://www.googleapis.com/youtube/v3";
-const EXCLUDE = /\b(?:kids? channel|children'?s? channel|for kids|made for kids|nursery rhymes?|toy unboxing|preschool learning|baby songs?|stock market|share market|stock trading|share trading|trading channel|day trading|intraday trading|nifty|sensex|options trading|crypto trading|investment tips|stock tips)\b/i;
+const EXCLUDE = /\b(?:kids?|children|childrens|nursery|cartoons?|toy unboxing|toy reviews?|preschool|baby songs?|बालगीत|बच्चों|बच्चो|stock market|share market|stock trading|share trading|trading|day trading|intraday|nifty|sensex|options trading|crypto trading|investing|investment tips|stock tips|शेयर बाजार|शेयर मार्केट|स्टॉक मार्केट|ट्रेडिंग)\b/i;
 function parse(raw:string) {
  let u:URL; try{u=new URL(raw)}catch{return null}
  if(!["https:","http:"].includes(u.protocol))return null;
