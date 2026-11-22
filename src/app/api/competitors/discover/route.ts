@@ -163,38 +163,35 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: `Provide language "hi" or "en" and at least one keyword (maximum 80 characters each).` }, { status: 400 });
   }
 
-  // YouTube search.list costs 100 quota units per request. Combine related
-  // phrases with YouTube's OR operator and cap discovery at four search calls.
-  const MAX_SEARCH_REQUESTS = 4;
+  // YouTube search.list costs 100 quota units per request. Pack phrases
+  // together only after reserving space for exclusions, so every final q fits.
+  const MAX_SEARCH_REQUESTS = 6;
   const MAX_QUERY_LENGTH = 450;
+  // Keep high-signal exclusions compact to preserve room for the user's topics.
+  const excludedSearchTerms = [
+    '-kids', '-cartoon', '-nursery', '-rhymes', '-trading', '-nifty', '-sensex',
+    '-intraday', '-"stock market"', '-"share market"', '-"options trading"', '-"investment tips"'
+  ].join(" ");
+  const availableKeywordLength = MAX_QUERY_LENGTH - excludedSearchTerms.length - 1;
   const searchQueries: string[] = [];
   let queryTerms: string[] = [];
   for (const keyword of keywords) {
     const term = `"${keyword.replace(/"/g, "").trim()}"`;
     const candidate = [...queryTerms, term].join("|");
-    if (candidate.length > MAX_QUERY_LENGTH && queryTerms.length) {
-      searchQueries.push(queryTerms.join("|"));
+    if (candidate.length > availableKeywordLength && queryTerms.length) {
+      searchQueries.push(queryTerms.join("|") + " " + excludedSearchTerms);
       queryTerms = [term];
     } else {
       queryTerms.push(term);
     }
   }
-  if (queryTerms.length) searchQueries.push(queryTerms.join("|"));
-  // Exclude obvious unrelated verticals before consuming AI screening capacity.
-  const excludedSearchTerms = [
-    '-kids', '-cartoon', '-nursery', '-rhymes', '-trading', '-nifty', '-sensex',
-    '-intraday', '-"stock market"', '-"share market"', '-"options trading"',
-    '-"investment tips"', '-"kids channel"', '-"for kids"'
-  ].join(" ");
-  for (let i = 0; i < searchQueries.length; i++) {
-    searchQueries[i] += " " + excludedSearchTerms;
-  }
+  if (queryTerms.length) searchQueries.push(queryTerms.join("|") + " " + excludedSearchTerms);
   if (searchQueries.some((query) => query.length > MAX_QUERY_LENGTH)) {
-    return NextResponse.json({ error: "Selected keywords plus exclusions exceed YouTube's query length limit. Reduce the keyword list.", maximumQueryLength: MAX_QUERY_LENGTH }, { status: 400 });
+    return NextResponse.json({ error: "A keyword is too long to fit the YouTube query limit alongside the safety exclusions. Shorten that keyword.", maximumQueryLength: MAX_QUERY_LENGTH }, { status: 400 });
   }
   if (searchQueries.length > MAX_SEARCH_REQUESTS) {
     return NextResponse.json({
-      error: `These keywords require ${searchQueries.length} search groups. Reduce the keyword list or use at most ${MAX_SEARCH_REQUESTS} groups (each query is limited to ${MAX_QUERY_LENGTH} characters).`,
+      error: `These keywords require ${searchQueries.length} search groups. The current quota-aware limit is ${MAX_SEARCH_REQUESTS} groups (up to ${MAX_SEARCH_REQUESTS * 100} YouTube search quota units). Remove a few keywords or split discovery into multiple runs.`,
       searchGroupsRequired: searchQueries.length,
       maximumSearchRequests: MAX_SEARCH_REQUESTS,
     }, { status: 400 });
