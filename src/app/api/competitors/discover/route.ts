@@ -34,7 +34,7 @@ type RejectedLearningExample = { channelTitle: string; description: string | nul
 function asRecord(value: unknown): Record<string, unknown> {
  return typeof value === "object" && value !== null && !Array.isArray(value) ? value as Record<string, unknown> : {};
 }
-const assessmentRules = "You are a strict channel research analyst for AIWithBh@i. Discover BOTH (A) AI tools and technology coverage and (B) practical AI system design educators. Category A: timely, substantive coverage of newly released AI models, LLMs, APIs, developer tools, agent frameworks, orchestration platforms, coding assistants, inference providers, vector databases, evaluation/observability tools and cloud AI platforms. Include hands-on technical demos, comparisons, implementation guidance, release analysis and engineering implications; do not accept shallow hype, affiliate-only promotion or generic tool roundups. Category B (priority): scenario-driven system design for IT professionals, such as designing production RAG/search systems, multi-agent workflows, enterprise copilots, coding agents, multimodal applications, real-time voice agents, recommendation/personalization, document intelligence, AI gateways/model routing, scalable inference, GPU serving, caching, data pipelines, evals, guardrails, security, monitoring, cost/latency optimization, reliability and deployment. Strong channels may cover either category deeply or both; do not require every channel to cover both. Prefer recent sample videos and repeated technical depth over channel branding. Official channels from Anthropic, Meta, Groq, OpenAI, DeepSeek, AWS, Databricks, Snowflake, NVIDIA, Palantir, CrowdStrike, Apple, Alphabet/Google, Microsoft, Mistral and other relevant providers qualify when sample videos directly cover their AI tools, engineering, research or implementations. Reject children entertainment, nursery rhymes, songs, gaming, lifestyle, generic entertainment, unrelated tutorials and channels with only incidental AI mentions. Never infer fit from subscriber count or channel name alone. For each channel provide confidenceScore 0-100, nicheRelevance 0-100, recommendation strong_candidate/possible_candidate/unlikely_match, concise reason, and up to 3 evidence items. Score strong only when multiple samples or clear channel evidence show sustained relevant coverage; weak or ambiguous evidence must score 80 or below. Return ONLY JSON in this shape: {\"assessments\":[{\"channelId\":\"...\",\"confidenceScore\":0,\"nicheRelevance\":0,\"recommendation\":\"unlikely_match\",\"reason\":\"...\",\"evidence\":[\"...\"]}]}. Include every channelId exactly once.";
+const assessmentRules = "You are a strict B2B technical creator research analyst for AIWithBh@i. The target audience is professional practitioners: AI Engineers, LLM Engineers, ML Engineers building production systems, AI Solution Architects, Enterprise/Solutions Architects designing AI products, AI Engineering Managers, technical leads, MLOps/LLMOps engineers and AI platform engineers. Discover channels that teach or demonstrate how to BUILD, DESIGN, INTEGRATE, DEPLOY, EVALUATE, SECURE and OPERATE real AI systems. Priority topics: production LLM applications, RAG pipelines and retrieval evaluation, agentic workflows and orchestration, enterprise copilots, AI product architecture, API/backend integration, vector databases, model serving and inference, GPU infrastructure, LLMOps/MLOps, monitoring/tracing/evaluation, guardrails, security/governance, latency/cost/reliability, cloud AI architecture and hands-on implementation. Also include deep technical developer coverage of AI models, APIs, frameworks and tools when it serves engineers building solutions. A channel can qualify through sustained depth in one or more of these areas; it need not cover everything. Judge actual sample video titles and descriptions plus channel description, not broad keywords or channel name. Require evidence of practical engineering, architecture decisions, code, implementation walkthroughs, system trade-offs, production deployment or technical analysis. Reject or strongly down-rank children's content, kids learning, cartoons, nursery rhymes, toy/unboxing, school homework channels, stock market, share market, trading, investing, crypto trading, finance tips, generic business/entrepreneurship, gaming, entertainment, general news, motivational content, generic coding with no AI systems relevance, shallow AI tool lists and AI hype without implementation. Do not mistake a channel for an AI engineering educator merely because it mentions AI, technology, software or business. Official vendor channels qualify only when supplied samples demonstrate relevant AI engineering, developer tools, architecture or implementation. Never infer fit from subscriber count or channel name alone. Score nicheRelevance against this professional AI engineering audience, not general technology interest. Provide confidenceScore 0-100, nicheRelevance 0-100, recommendation strong_candidate/possible_candidate/unlikely_match, concise reason and up to 3 specific evidence items. Strong candidate requires sustained, clearly evidenced professional AI engineering/architecture content; weak, ambiguous, mixed-niche or single-incidental-video evidence must score 80 or below. Return ONLY JSON in this shape: {\"assessments\":[{\"channelId\":\"...\",\"confidenceScore\":0,\"nicheRelevance\":0,\"recommendation\":\"unlikely_match\",\"reason\":\"...\",\"evidence\":[\"...\"]}]}. Include every channelId exactly once.";
 function parseAssessments(raw: string, ids: string[]) {
  const cleaned=raw.replace(/^```(?:json)?\s*/i,"").replace(/\s*```$/,"").trim();
  const jsonText=cleaned.match(/\{[\s\S]*\}/)?.[0] ?? cleaned;
@@ -98,9 +98,9 @@ async function screenDiscoveryChannels(channels: YouTubeChannel[], samples: Map<
    channelId:c.id,
    title:(c.snippet?.title??"").slice(0,160),
    description:(c.snippet?.description??"").slice(0,500),
-   sampleVideos:(samples.get(c.id)??[]).slice(0,1).map(v=>({
-    title:v.title.slice(0,120),
-    description:v.description.slice(0,80),
+   sampleVideos:(samples.get(c.id)??[]).slice(0,3).map(v=>({
+    title:v.title.slice(0,140),
+    description:v.description.slice(0,180),
     matchedQuery:v.matchedQuery.slice(0,60)
    }))
   })).join("\n");
@@ -180,6 +180,18 @@ export async function POST(request: NextRequest) {
     }
   }
   if (queryTerms.length) searchQueries.push(queryTerms.join("|"));
+  // Exclude obvious unrelated verticals before consuming AI screening capacity.
+  const excludedSearchTerms = [
+    '-kids', '-cartoon', '-nursery', '-rhymes', '-trading', '-nifty', '-sensex',
+    '-intraday', '-"stock market"', '-"share market"', '-"options trading"',
+    '-"investment tips"', '-"kids channel"', '-"for kids"'
+  ].join(" ");
+  for (let i = 0; i < searchQueries.length; i++) {
+    searchQueries[i] += " " + excludedSearchTerms;
+  }
+  if (searchQueries.some((query) => query.length > MAX_QUERY_LENGTH)) {
+    return NextResponse.json({ error: "Selected keywords plus exclusions exceed YouTube's query length limit. Reduce the keyword list.", maximumQueryLength: MAX_QUERY_LENGTH }, { status: 400 });
+  }
   if (searchQueries.length > MAX_SEARCH_REQUESTS) {
     return NextResponse.json({
       error: `These keywords require ${searchQueries.length} search groups. Reduce the keyword list or use at most ${MAX_SEARCH_REQUESTS} groups (each query is limited to ${MAX_QUERY_LENGTH} characters).`,
@@ -255,8 +267,14 @@ export async function POST(request: NextRequest) {
       };
     });
 
+    // Exclude channels whose own identity clearly belongs to a disallowed vertical.
+    // A single off-topic sample is not enough to reject a mixed-topic creator.
+    const hardExcludedTopic = /\b(?:kids? channel|children'?s? channel|nursery rhymes?|toy unboxing|preschool learning|baby songs?|stock market|share market|trading channel|day trading|intraday trading|nifty|sensex|options trading|crypto trading|investment tips)\b/i;
+    const topicExcludedIds = new Set(channels.filter((channel) =>
+      hardExcludedTopic.test((channel.snippet?.title ?? "") + " " + (channel.snippet?.description ?? ""))
+    ).map((channel) => channel.id));
     const candidates = channels
-      .filter((channel) => channel.id && channel.snippet?.title && !rejectedIds.has(channel.id))
+      .filter((channel) => channel.id && channel.snippet?.title && !rejectedIds.has(channel.id) && !topicExcludedIds.has(channel.id))
       .sort((a, b) => (samplesByChannel.get(b.id)?.length ?? 0) - (samplesByChannel.get(a.id)?.length ?? 0));
     const { assessments, provider: screeningProvider } = await screenDiscoveryChannels(candidates, samplesByChannel, rejectedExamples);
     const eligible = candidates.filter((channel) => {
@@ -316,6 +334,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({
       searchedKeywords: keywords, searchQueriesUsed: searchQueries, youtubeSearchRequests: searchQueries.length, language, channelsDiscovered: channelIds.size,
       channelsAIassessed: assessments.size,
+      channelsExcludedByTopic: topicExcludedIds.size,
       priorRejectedExamplesUsed: rejectedExamples.length,
       previouslyRejectedChannelsSkipped: rejectedIds.size,
       channelsPassingConfidenceThreshold: eligible.length,
@@ -328,7 +347,7 @@ export async function POST(request: NextRequest) {
       activeCompetitorLimit: MAX_ACTIVE_COMPETITORS, ageFilter: "No channel-age restriction; global discovery.",
       screeningLimitPerRun: MAX_CHANNELS_PER_AI_SCREEN,
       screeningBatchSize: AI_SCREEN_BATCH_SIZE,
-      qualification: "Only strong candidates with confidence and niche relevance scores above 80 are saved. AI-production style still requires human verification.",
+      qualification: "Discovery targets professional AI engineers, LLM engineers, AI/solutions architects, AI engineering managers and production AI platform teams. Children/entertainment and finance/trading verticals are excluded by search terms and channel metadata; only strong evidence-backed technical matches pass AI screening. AI-production style still requires human verification.",
       quotaNote: "This dashboard tracks requests made through this app only. Other apps using the same Google Cloud project also consume its quota.",
       quota: quota ?? null,
     });
