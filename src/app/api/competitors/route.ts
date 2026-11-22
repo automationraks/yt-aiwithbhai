@@ -11,7 +11,7 @@ export async function GET() {
   if (authError || !user) return NextResponse.json({ error: "Unauthorized." }, { status: 401 });
 
   const { data, error } = await supabase.from("competitors")
-    .select("id,youtube_channel_id,channel_title,channel_url,description,published_at,country,language,subscriber_count,video_count,view_count,is_active,discovered_at,last_checked_at,ai_production_status,ai_production_evidence,ai_production_reviewed_at,ai_production_review_note,discovery_count,last_discovered_at,discovery_eligibility,discovery_reason,discovery_score,user_tracking_preference,last_user_action,last_user_action_at")
+    .select("id,youtube_channel_id,channel_title,channel_url,description,published_at,country,language,subscriber_count,video_count,view_count,is_active,discovered_at,last_checked_at,ai_production_status,ai_production_evidence,ai_production_reviewed_at,ai_production_review_note,discovery_count,last_discovered_at,discovery_eligibility,discovery_reason,discovery_score,user_tracking_preference,last_user_action,last_user_action_at,is_manual_priority")
     .eq("owner_id", user.id).order("subscriber_count", { ascending: false, nullsFirst: false }).limit(500);
   if (error) return NextResponse.json({ error: "Unable to load competitors.", details: error.message }, { status: 500 });
   const { count, error: countError } = await supabase.from("competitors").select("id", { count: "exact", head: true }).eq("owner_id", user.id).eq("is_active", true).eq("ai_production_status", "qualified");
