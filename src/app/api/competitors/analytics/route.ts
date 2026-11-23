@@ -49,7 +49,7 @@ export async function GET() {
     const faceless = Math.max(0, Math.min(100, Number(ai.facelessFormatLikelihood) || 0));
     const relevance = Math.max(0, Math.min(100, Number(ai.nicheFitScore ?? ai.industrialRelevance) || 0));
     const screenedAt = typeof ai.screenedAt === "string" ? ai.screenedAt : null;
-    const nicheScreeningCurrent = Boolean(screenedAt && new Date(screenedAt).getTime() >= Date.parse("2026-11-21T00:00:00Z"));
+    const nicheScreeningCurrent = ai.nicheVersion === "aiwithbhai-ai-systems-v1";
     const nicheFitScore = nicheScreeningCurrent ? relevance : null;
     const consistency = uploadIntervalDays === null ? 0 : Math.max(0, Math.min(100, 100 - Math.max(0, uploadIntervalDays - 7) * 4));
     const growth = growthPercent === null ? 0 : Math.max(0, Math.min(100, 50 + growthPercent * 5));
