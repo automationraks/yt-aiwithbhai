@@ -7,9 +7,9 @@ export const dynamic = "force-dynamic";
 
 const YOUTUBE_API = "https://www.googleapis.com/youtube/v3";
 const MAX_ACTIVE_COMPETITORS = 100;
-const MAX_CHANNELS_PER_AI_SCREEN = 8;
-const AI_SCREEN_BATCH_SIZE = 1;
-const MIN_DISCOVERY_SCORE = 81;
+const MAX_CHANNELS_PER_AI_SCREEN = 24;
+const AI_SCREEN_BATCH_SIZE = 2;
+const MIN_DISCOVERY_SCORE = 40;
 
 type QuotaReservation = { allowed: boolean; bucket: string; used: number; limit: number; remaining: number; resetAt: string; quotaDate: string };
 type SampleVideo = {
@@ -34,7 +34,7 @@ type RejectedLearningExample = { channelTitle: string; description: string | nul
 function asRecord(value: unknown): Record<string, unknown> {
  return typeof value === "object" && value !== null && !Array.isArray(value) ? value as Record<string, unknown> : {};
 }
-const assessmentRules = "You are a strict B2B technical creator research analyst for AIWithBh@i. The target audience is professional practitioners: AI Engineers, LLM Engineers, ML Engineers building production systems, AI Solution Architects, Enterprise/Solutions Architects designing AI products, AI Engineering Managers, technical leads, MLOps/LLMOps engineers and AI platform engineers. Discover channels that teach or demonstrate how to BUILD, DESIGN, INTEGRATE, DEPLOY, EVALUATE, SECURE and OPERATE real AI systems. Priority topics: production LLM applications, RAG pipelines and retrieval evaluation, agentic workflows and orchestration, enterprise copilots, AI product architecture, API/backend integration, vector databases, model serving and inference, GPU infrastructure, LLMOps/MLOps, monitoring/tracing/evaluation, guardrails, security/governance, latency/cost/reliability, cloud AI architecture and hands-on implementation. Also include deep technical developer coverage of AI models, APIs, frameworks and tools when it serves engineers building solutions. A channel can qualify through sustained depth in one or more of these areas; it need not cover everything. Judge actual sample video titles and descriptions plus channel description, not broad keywords or channel name. Require evidence of practical engineering, architecture decisions, code, implementation walkthroughs, system trade-offs, production deployment or technical analysis. Reject or strongly down-rank children's content, kids learning, cartoons, nursery rhymes, toy/unboxing, school homework channels, stock market, share market, trading, investing, crypto trading, finance tips, generic business/entrepreneurship, gaming, entertainment, general news, motivational content, generic coding with no AI systems relevance, shallow AI tool lists and AI hype without implementation. Do not mistake a channel for an AI engineering educator merely because it mentions AI, technology, software or business. Official vendor channels qualify only when supplied samples demonstrate relevant AI engineering, developer tools, architecture or implementation. Never infer fit from subscriber count or channel name alone. Score nicheRelevance against this professional AI engineering audience, not general technology interest. Provide confidenceScore 0-100, nicheRelevance 0-100, recommendation strong_candidate/possible_candidate/unlikely_match, concise reason and up to 3 specific evidence items. Strong candidate requires sustained, clearly evidenced professional AI engineering/architecture content; weak, ambiguous, mixed-niche or single-incidental-video evidence must score 80 or below. Return ONLY JSON in this shape: {\"assessments\":[{\"channelId\":\"...\",\"confidenceScore\":0,\"nicheRelevance\":0,\"recommendation\":\"unlikely_match\",\"reason\":\"...\",\"evidence\":[\"...\"]}]}. Include every channelId exactly once.";
+const assessmentRules = "You are a strict B2B technical creator research analyst for AIWithBh@i. The target audience is professional practitioners: AI Engineers, LLM Engineers, ML Engineers building production systems, AI Solution Architects, Enterprise/Solutions Architects designing AI products, AI Engineering Managers, technical leads, MLOps/LLMOps engineers and AI platform engineers. Discover channels that teach or demonstrate how to BUILD, DESIGN, INTEGRATE, DEPLOY, EVALUATE, SECURE and OPERATE real AI systems. Priority topics: production LLM applications, RAG pipelines and retrieval evaluation, agentic workflows and orchestration, enterprise copilots, AI product architecture, API/backend integration, vector databases, model serving and inference, GPU infrastructure, LLMOps/MLOps, monitoring/tracing/evaluation, guardrails, security/governance, latency/cost/reliability, cloud AI architecture and hands-on implementation. Also include deep technical developer coverage of AI models, APIs, frameworks and tools when it serves engineers building solutions. A channel can qualify through sustained depth in one or more of these areas; it need not cover everything. Judge actual sample video titles and descriptions plus channel description, not broad keywords or channel name. Require evidence of practical engineering, architecture decisions, code, implementation walkthroughs, system trade-offs, production deployment or technical analysis. Reject or strongly down-rank children's content, kids learning, cartoons, nursery rhymes, toy/unboxing, school homework channels, stock market, share market, trading, investing, crypto trading, finance tips, generic business/entrepreneurship, gaming, entertainment, general news, motivational content, generic coding with no AI systems relevance, shallow AI tool lists and AI hype without implementation. Do not mistake a channel for an AI engineering educator merely because it mentions AI, technology, software or business. Official vendor channels qualify only when supplied samples demonstrate relevant AI engineering, developer tools, architecture or implementation. Never infer fit from subscriber count or channel name alone. Score nicheRelevance against this professional AI engineering audience, not general technology interest. Provide confidenceScore 0-100, nicheRelevance 0-100, recommendation strong_candidate/possible_candidate/unlikely_match, concise reason and up to 3 specific evidence items. A candidate can pass when confidenceScore and nicheRelevance are both at least 40 and there is specific evidence of professional AI engineering relevance. Scores below 40 or no credible evidence must be rejected. recommendation may be strong_candidate or possible_candidate when the 40-point threshold is met; use unlikely_match below 40. Return ONLY JSON in this shape: {\"assessments\":[{\"channelId\":\"...\",\"confidenceScore\":0,\"nicheRelevance\":0,\"recommendation\":\"unlikely_match\",\"reason\":\"...\",\"evidence\":[\"...\"]}]}. Include every channelId exactly once.";
 function parseAssessments(raw: string, ids: string[]) {
  const cleaned=raw.replace(/^```(?:json)?\s*/i,"").replace(/\s*```$/,"").trim();
  const jsonText=cleaned.match(/\{[\s\S]*\}/)?.[0] ?? cleaned;
@@ -56,10 +56,11 @@ async function screenDiscoveryChannels(channels: YouTubeChannel[], samples: Map<
  for(let i=0;i<limited.length;i+=AI_SCREEN_BATCH_SIZE) chunks.push(limited.slice(i,i+AI_SCREEN_BATCH_SIZE));
 
  const callGemini=async(prompt:string,ids:string[])=>{
-  const model=process.env.GEMINI_MODEL||"gemini-2.5-flash-lite";
-  const res=await fetch("https://generativelanguage.googleapis.com/v1beta/models/"+model+":generateContent",{method:"POST",headers:{"Content-Type":"application/json","x-goog-api-key":process.env.GEMINI_API_KEY!},body:JSON.stringify({systemInstruction:{parts:[{text:assessmentRules}]},contents:[{role:"user",parts:[{text:prompt}]}],generationConfig:{responseMimeType:"application/json",temperature:0.1,maxOutputTokens:2048}}),signal:AbortSignal.timeout(60000)});
-  const data=await res.json().catch(()=>({})); if(!res.ok) throw new Error(data?.error?.message||"Gemini screening failed.");
-  const out=data?.candidates?.[0]?.content?.parts?.map((p:{text?:string})=>p.text??"").join(""); if(!out) throw new Error("Gemini returned an empty screening result.");
+  const model=process.env.GEMINI_MODEL||"gemini-3.5-flash-lite";
+  const res=await fetch("https://generativelanguage.googleapis.com/v1beta/interactions",{method:"POST",headers:{"Content-Type":"application/json","x-goog-api-key":process.env.GEMINI_API_KEY!},body:JSON.stringify({model,input:prompt,system_instruction:assessmentRules,response_format:{type:"text",mime_type:"application/json"},generation_config:{temperature:0.1,max_output_tokens:2048,thinking_level:"minimal"},store:false}),signal:AbortSignal.timeout(60000)});
+  const data=await res.json().catch(()=>({})); if(!res.ok) throw new Error(data?.error?.message||data?.message||"Gemini screening failed.");
+  const out=typeof data?.output_text==="string"?data.output_text:(Array.isArray(data?.steps)?data.steps.filter((s:{type?:string})=>s?.type==="model_output").flatMap((s:{content?:Array<{type?:string;text?:string}>})=>Array.isArray(s.content)?s.content:[]).filter((p:{type?:string;text?:string})=>p?.type==="text"&&typeof p.text==="string").map((p:{text:string})=>p.text).join("\\n"):"");
+  if(!out) throw new Error("Gemini Interactions API returned an empty screening result.");
   const assessments=parseAssessments(out,ids);
   if(ids.some(id=>!assessments.has(id))) throw new Error("Gemini returned incomplete channel assessments; retry discovery.");
   return {assessments,provider:model};
@@ -210,7 +211,7 @@ export async function POST(request: NextRequest) {
       const reservation = await reserveQuota(supabase, "search");
       if (!reservation.allowed) return NextResponse.json({ error: "Daily YouTube search request limit reached.", quota: reservation }, { status: 429 });
       const search = await youtubeGet<{ items?: Array<{ id?: { videoId?: string }; snippet?: { channelId?: string; title?: string; description?: string; channelTitle?: string; publishedAt?: string; thumbnails?: { medium?: { url?: string }; default?: { url?: string } } } }> }>("search", {
-        part: "snippet", type: "video", maxResults: "25", q: searchQuery, relevanceLanguage: language, order: "relevance", videoDuration: "medium",
+        part: "snippet", type: "video", maxResults: "25", q: searchQuery, relevanceLanguage: language, order: "date", videoDuration: "medium",
       });
       for (const item of search.items ?? []) {
         const channelId = item.snippet?.channelId;
@@ -282,7 +283,7 @@ export async function POST(request: NextRequest) {
     const { assessments, provider: screeningProvider } = await screenDiscoveryChannels(candidates, samplesByChannel, rejectedExamples);
     const eligible = candidates.filter((channel) => {
       const assessment = assessments.get(channel.id);
-      return Boolean(assessment && assessment.confidenceScore >= MIN_DISCOVERY_SCORE && assessment.nicheRelevance >= MIN_DISCOVERY_SCORE && assessment.recommendation === "strong_candidate");
+      return Boolean(assessment && assessment.confidenceScore >= MIN_DISCOVERY_SCORE && assessment.nicheRelevance >= MIN_DISCOVERY_SCORE && assessment.recommendation !== "unlikely_match");
     });
 
     const discoveredIds = candidates.map((channel) => channel.id);
@@ -295,7 +296,7 @@ export async function POST(request: NextRequest) {
     const rows = candidates.map((channel) => {
       const assessment = assessments.get(channel.id);
       const existing = existingById.get(channel.id);
-      const passed = Boolean(assessment && assessment.confidenceScore >= MIN_DISCOVERY_SCORE && assessment.nicheRelevance >= MIN_DISCOVERY_SCORE && assessment.recommendation === "strong_candidate");
+      const passed = Boolean(assessment && assessment.confidenceScore >= MIN_DISCOVERY_SCORE && assessment.nicheRelevance >= MIN_DISCOVERY_SCORE && assessment.recommendation !== "unlikely_match");
       const oldEvidence = existing?.ai_production_evidence && typeof existing.ai_production_evidence === "object" ? existing.ai_production_evidence as Record<string, unknown> : {};
       const evidence = assessment ? {
         ...oldEvidence, reviewStatus: passed ? "ai_screened_high_confidence" : "ai_filtered",
