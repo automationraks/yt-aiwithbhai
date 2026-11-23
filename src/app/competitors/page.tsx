@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { ArrowLeft, ExternalLink, Loader2, Search, Target, Users, RefreshCw, Power, AlertCircle, Sparkles } from "lucide-react";
 
@@ -67,6 +67,8 @@ export default function CompetitorExplorerPage() {
   const [search, setSearch] = useState("");
   const [loading, setLoading] = useState(true);
   const [discovering, setDiscovering] = useState(false);
+  const [discoveryMode, setDiscoveryMode] = useState<"discover" | "scan" | null>(null);
+  const discoveryInFlight = useRef(false);
   const [updatingId, setUpdatingId] = useState<string | null>(null);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
@@ -122,8 +124,11 @@ export default function CompetitorExplorerPage() {
   async function removeManualLink(id:string){try{const response=await fetch("/api/manual-tracked-channels?id="+encodeURIComponent(id),{method:"DELETE"});const result=await response.json();if(!response.ok)throw new Error(result.error||"Could not remove link.");setManualLinks(current=>current.filter(x=>x.id!==id));await loadCompetitors();}catch(err){setError(err instanceof Error?err.message:"Could not remove link.");}}
 
   async function discover(mode: "discover" | "scan") {
+    if (discoveryInFlight.current) return;
+    discoveryInFlight.current = true;
+    setDiscoveryMode(mode);
     const keywordList = Array.from(new Set(keywords.split(/[\n,]/).map((item) => item.trim()).filter(Boolean)));
-    if (!keywordList.length) { setError("Enter at least one keyword."); return; }
+    if (!keywordList.length) { setError("Enter at least one keyword."); discoveryInFlight.current = false; setDiscoveryMode(null); return; }
     setDiscovering(true); setError(""); setNotice(""); setLastDiscovery(null);
     try {
       const response = await fetch("/api/competitors/discover", {
@@ -136,7 +141,7 @@ export default function CompetitorExplorerPage() {
       setNotice((mode === "scan" ? "Fresh scan complete. Removed " + (result.removedAutomaticChannels ?? 0) + " automatically discovered records; " : "Discovery complete. Existing records were retained. ") + result.saved + " channel records saved from " + result.channelsDiscovered + " YouTube channels found. " + (result.channelsFilteredByAI ?? 0) + " filtered by AI; " + (result.channelsPendingScreening ?? 0) + " pending screening. Manually saved channels were preserved.");
       await loadCompetitors();
     } catch (err) { setError(err instanceof Error ? err.message : "Discovery failed."); }
-    finally { setDiscovering(false); }
+    finally { setDiscovering(false); discoveryInFlight.current = false; setDiscoveryMode(null); }
   }
 
   async function runAIScreen(item: Competitor) {
@@ -212,7 +217,7 @@ export default function CompetitorExplorerPage() {
         <div><label className="mb-2 block text-xs text-slate-400">Search relevance language</label><select value={language} onChange={(event)=>setLanguage(event.target.value as "hi"|"en")} className="w-full rounded-lg border border-slate-700 bg-[#0b121d] px-3 py-2.5 text-sm outline-none focus:border-cyan-500"><option value="hi">Hindi</option><option value="en">English</option></select><p className="mt-2 text-[10px] leading-4 text-slate-500">This affects YouTube search relevance. It does not verify the channel&apos;s actual spoken language.</p></div>
         <div><label className="mb-2 block text-xs text-slate-400">Keywords (one per line or comma-separated)</label><textarea value={keywords} onChange={(event)=>setKeywords(event.target.value)} rows={4} className="w-full resize-y rounded-lg border border-slate-700 bg-[#0b121d] px-3 py-2.5 text-sm outline-none focus:border-cyan-500" placeholder={"AI system design\nRAG architecture and LLM engineering"}/></div>
       </div>
-      <div className="mt-4 flex flex-wrap items-center justify-between gap-3"><p className="max-w-2xl text-[11px] text-slate-500">Targets professional AI engineering and solution architecture. AI checks sample videos and only retains automatically discovered channels scoring at least 50/100 for confidence and niche relevance. Children&apos;s content and finance/trading channels are excluded. Discover Creators adds new matches without deleting saved channels. Scan Again replaces automatically discovered YouTube channels only; manually saved/priority channels are protected. Instagram discovery is available through eligible connected/manual Business Discovery profiles, not unrestricted global keyword search.</p><div className="flex flex-wrap gap-2"><button onClick={() => void discover("discover")} disabled={discovering} className="inline-flex items-center gap-2 rounded-lg bg-cyan-500 px-4 py-2.5 text-sm font-semibold text-slate-950 hover:bg-cyan-400 disabled:cursor-not-allowed disabled:opacity-50">{discovering?<Loader2 size={16} className="animate-spin"/>:<Search size={16}/>} {discovering?"Discovering...":"Discover Creators"}</button><button onClick={() => { if (window.confirm("This will remove automatically discovered YouTube channels and run a fresh scan. Manually saved/custom channels will be kept. Continue?")) void discover("scan"); }} disabled={discovering} className="inline-flex items-center gap-2 rounded-lg border border-amber-500/40 px-4 py-2.5 text-sm font-semibold text-amber-200 hover:bg-amber-500/10 disabled:cursor-not-allowed disabled:opacity-50">{discovering?<Loader2 size={16} className="animate-spin"/>:<RefreshCw size={16}/>} {discovering?"Scanning...":"Scan Again"}</button></div></div>
+      <div className="mt-4 flex flex-wrap items-center justify-between gap-3"><p className="max-w-2xl text-[11px] text-slate-500">Targets professional AI engineering and solution architecture. AI checks sample videos and only retains automatically discovered channels scoring at least 50/100 for confidence and niche relevance. Children&apos;s content and finance/trading channels are excluded. Discover Creators adds new matches without deleting saved channels. Scan Again replaces automatically discovered YouTube channels only; manually saved/priority channels are protected. Instagram discovery is available through eligible connected/manual Business Discovery profiles, not unrestricted global keyword search.</p><div className="flex flex-wrap gap-2"><button type="button" onClick={(event) => { event.preventDefault(); event.stopPropagation(); void discover("discover"); }} disabled={discovering} className="inline-flex items-center gap-2 rounded-lg bg-cyan-500 px-4 py-2.5 text-sm font-semibold text-slate-950 hover:bg-cyan-400 disabled:cursor-not-allowed disabled:opacity-50">{discovering?<Loader2 size={16} className="animate-spin"/>:<Search size={16}/>} {discoveryMode === "discover"?"Discovering...":"Discover Creators"}</button><button type="button" onClick={(event) => { event.preventDefault(); event.stopPropagation(); if (discoveryInFlight.current) return; if (window.confirm("This will replace automatically discovered YouTube channels only after at least one new 50/100 niche match is found and saved. Manually saved/custom channels will be kept. Continue?")) void discover("scan"); }} disabled={discovering} className="inline-flex items-center gap-2 rounded-lg border border-amber-500/40 px-4 py-2.5 text-sm font-semibold text-amber-200 hover:bg-amber-500/10 disabled:cursor-not-allowed disabled:opacity-50">{discovering?<Loader2 size={16} className="animate-spin"/>:<RefreshCw size={16}/>} {discoveryMode === "scan"?"Scanning...":"Scan Again"}</button></div></div>
     </section>
 
     {error && <div className="mb-4 flex items-start gap-2 rounded-lg border border-red-500/30 bg-red-500/10 p-3 text-sm text-red-300"><AlertCircle size={16} className="mt-0.5 shrink-0"/><span>{error}</span></div>}
