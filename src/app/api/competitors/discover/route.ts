@@ -9,7 +9,7 @@ const YOUTUBE_API = "https://www.googleapis.com/youtube/v3";
 const MAX_ACTIVE_COMPETITORS = 100;
 const MAX_CHANNELS_PER_AI_SCREEN = 24;
 const AI_SCREEN_BATCH_SIZE = 2;
-const MIN_DISCOVERY_SCORE = 40;
+const MIN_DISCOVERY_SCORE = 50;
 
 type QuotaReservation = { allowed: boolean; bucket: string; used: number; limit: number; remaining: number; resetAt: string; quotaDate: string };
 type SampleVideo = {
@@ -154,13 +154,13 @@ export async function POST(request: NextRequest) {
   if (authError || !user) return NextResponse.json({ error: "Unauthorized." }, { status: 401 });
   if (!process.env.YOUTUBE_API_KEY) return NextResponse.json({ error: "YOUTUBE_API_KEY is not configured on the server." }, { status: 503 });
 
-  let body: { keywords?: unknown; language?: unknown };
+  let body: { keywords?: unknown; language?: unknown; mode?: unknown };
   try { body = await request.json(); } catch { return NextResponse.json({ error: "Request body must be valid JSON." }, { status: 400 }); }
   const language = body.language === "en" ? "en" : body.language === "hi" ? "hi" : null;
   const keywords = Array.isArray(body.keywords)
     ? [...new Set(body.keywords.filter((item): item is string => typeof item === "string").map((item) => item.trim()).filter(Boolean))]
     : [];
-  if (!language || keywords.length === 0 || keywords.some((keyword) => keyword.length > 80)) {
+  const mode = body.mode === "scan" ? "scan" : body.mode === "discover" ? "discover" : null;\n  if (!mode) return NextResponse.json({ error: "Choose discovery mode: discover or scan." }, { status: 400 });\n  if (!language || keywords.length === 0 || keywords.some((keyword) => keyword.length > 80)) {
     return NextResponse.json({ error: `Provide language "hi" or "en" and at least one keyword (maximum 80 characters each).` }, { status: 400 });
   }
 
@@ -286,6 +286,17 @@ export async function POST(request: NextRequest) {
       return Boolean(assessment && assessment.confidenceScore >= MIN_DISCOVERY_SCORE && assessment.nicheRelevance >= MIN_DISCOVERY_SCORE && assessment.recommendation !== "unlikely_match");
     });
 
+    // Scan mode replaces only automatically discovered YouTube rows.
+    // Manually saved/priority channels (is_manual_priority=true) and all
+    // manual_tracked_channels records are deliberately left untouched.
+    let removedAutomaticChannels = 0;
+    if (mode === "scan") {
+      const { data: removed, error: clearError } = await supabase.from("competitors")
+        .delete().eq("owner_id", user.id).eq("is_manual_priority", false).select("id");
+      if (clearError) return NextResponse.json({ error: "Fresh scan could not clear previous automatically discovered channels.", details: clearError.message }, { status: 500 });
+      removedAutomaticChannels = removed?.length ?? 0;
+    }
+
     const discoveredIds = candidates.map((channel) => channel.id);
     const { data: existingRows, error: existingError } = discoveredIds.length
       ? await supabase.from("competitors").select("id,youtube_channel_id,ai_production_status,ai_production_evidence,is_active,user_tracking_preference,discovery_count").eq("owner_id", user.id).in("youtube_channel_id", discoveredIds)
@@ -345,7 +356,7 @@ export async function POST(request: NextRequest) {
       channelsPassingConfidenceThreshold: eligible.length,
       channelsFilteredByAI: candidates.filter((channel) => assessments.has(channel.id) && !eligible.includes(channel)).length,
       channelsPendingScreening: candidates.filter((channel) => !assessments.has(channel.id)).length,
-      minimumConfidenceScore: MIN_DISCOVERY_SCORE,
+      mode, removedAutomaticChannels,\n      minimumConfidenceScore: MIN_DISCOVERY_SCORE,
       minimumNicheRelevance: MIN_DISCOVERY_SCORE,
       screeningProvider,
       channelsWithinAgeRange: eligible.length, saved, candidatesSaved: saved, sampleEvidenceRefreshed: candidates.filter((channel) => (samplesByChannel.get(channel.id)?.length ?? 0) > 0).length, activeCompetitorCount: count ?? 0,
