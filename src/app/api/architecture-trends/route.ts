@@ -94,7 +94,7 @@ export async function POST() {
     }).filter(x => x.title && x.trend_key);
     if (!trends.length) return NextResponse.json({ error: "AI did not return usable architecture trends." }, { status: 502 });
     const { data, error } = await s.from("architecture_trends").upsert(trends, { onConflict: "owner_id,trend_key" }).select("*");
-    if (error) return NextResponse.json({ error: "Could not save trends. Apply the research migration first.", details: error.message }, { status: 500 });
+    if (error) return NextResponse.json({ error: "Could not save architecture trends.", details: error.message, code: error.code, hint: error.hint, action: "Run supabase/migrations/20261123_architecture_trends_repair.sql in the Supabase SQL Editor, then retry." }, { status: 500 });
     return NextResponse.json({ trends: data ?? [], generated: trends.length, provider: result.provider, fallbackUsed: result.fallbackUsed, shortlistedChannels: channels?.length ?? 0, referenceVideosAvailable: videos.length });
   } catch (error) {
     return NextResponse.json({ error: error instanceof Error ? error.message : "Trend generation failed." }, { status: 502 });
