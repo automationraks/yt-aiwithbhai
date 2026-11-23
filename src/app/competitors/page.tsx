@@ -93,8 +93,8 @@ export default function CompetitorExplorerPage() {
         const relevance = item.ai_production_evidence?.nicheRelevance;
         if (item.is_manual_priority) return true;
         return !(
-          (typeof confidence === "number" && confidence < 81) ||
-          (typeof relevance === "number" && relevance < 81)
+          (typeof confidence === "number" && confidence < 50) ||
+          (typeof relevance === "number" && relevance < 50)
         );
       });
       setCompetitors(visibleRows);
