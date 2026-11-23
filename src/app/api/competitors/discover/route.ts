@@ -160,7 +160,9 @@ export async function POST(request: NextRequest) {
   const keywords = Array.isArray(body.keywords)
     ? [...new Set(body.keywords.filter((item): item is string => typeof item === "string").map((item) => item.trim()).filter(Boolean))]
     : [];
-  const mode = body.mode === "scan" ? "scan" : body.mode === "discover" ? "discover" : null;\n  if (!mode) return NextResponse.json({ error: "Choose discovery mode: discover or scan." }, { status: 400 });\n  if (!language || keywords.length === 0 || keywords.some((keyword) => keyword.length > 80)) {
+  const mode = body.mode === "scan" ? "scan" : body.mode === "discover" ? "discover" : null;
+  if (!mode) return NextResponse.json({ error: "Choose discovery mode: discover or scan." }, { status: 400 });
+  if (!language || keywords.length === 0 || keywords.some((keyword) => keyword.length > 80)) {
     return NextResponse.json({ error: `Provide language "hi" or "en" and at least one keyword (maximum 80 characters each).` }, { status: 400 });
   }
 
