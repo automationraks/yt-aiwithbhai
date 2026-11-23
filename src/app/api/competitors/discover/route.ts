@@ -345,14 +345,26 @@ export async function POST(request: NextRequest) {
       saved = data?.length ?? 0;
     }
 
-    if (mode === "scan") {
-      const keepIds = new Set(discoveredIds);
-      const staleIds = (priorAutomaticRows ?? []).filter(row => !keepIds.has(row.youtube_channel_id)).map(row => row.id);
+    // Safety gate: never delete the existing discovery list when YouTube
+    // returns no channels, AI finds no qualifying niche matches, or nothing is saved.
+    // A fresh scan is considered successful only when at least one 50+/100 match
+    // has been screened and persisted.
+    const safeToReplaceAutomaticRows =
+      mode === "scan" &&
+      channelIds.size > 0 &&
+      eligible.length > 0 &&
+      saved > 0;
+
+    if (safeToReplaceAutomaticRows) {
+      const keepIds = new Set(eligible.map((channel) => channel.id));
+      const staleIds = (priorAutomaticRows ?? [])
+        .filter((row) => !keepIds.has(row.youtube_channel_id))
+        .map((row) => row.id);
       for (let index = 0; index < staleIds.length; index += 100) {
         const batch = staleIds.slice(index, index + 100);
         const { data: removed, error: clearError } = await supabase.from("competitors")
           .delete().eq("owner_id", user.id).eq("is_manual_priority", false).in("id", batch).select("id");
-        if (clearError) return NextResponse.json({ error: "New channels were saved, but old automatically discovered channels could not be fully cleared.", details: clearError.message, saved, removedAutomaticChannels }, { status: 500 });
+        if (clearError) return NextResponse.json({ error: "New matching channels were saved, but old automatically discovered channels could not be fully cleared.", details: clearError.message, saved, removedAutomaticChannels }, { status: 500 });
         removedAutomaticChannels += removed?.length ?? 0;
       }
     }
@@ -368,7 +380,7 @@ export async function POST(request: NextRequest) {
       channelsPassingConfidenceThreshold: eligible.length,
       channelsFilteredByAI: candidates.filter((channel) => assessments.has(channel.id) && !eligible.includes(channel)).length,
       channelsPendingScreening: candidates.filter((channel) => !assessments.has(channel.id)).length,
-      mode, removedAutomaticChannels,
+      mode, removedAutomaticChannels, automaticRowsReplaced: safeToReplaceAutomaticRows, scanPreservedReason: mode === "scan" && !safeToReplaceAutomaticRows ? (channelIds.size === 0 ? "YouTube returned zero channels." : eligible.length === 0 ? "No channels passed the 50/100 confidence and niche relevance thresholds." : "No matching channel records were saved.") : null,
       minimumConfidenceScore: MIN_DISCOVERY_SCORE,
       minimumNicheRelevance: MIN_DISCOVERY_SCORE,
       screeningProvider,
