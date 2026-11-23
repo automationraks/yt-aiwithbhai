@@ -47,7 +47,10 @@ export async function GET() {
     const ai = evidence.aiScreening ?? {};
     const visual = Math.max(0, Math.min(100, Number(ai.syntheticVisualStyleLikelihood) || 0));
     const faceless = Math.max(0, Math.min(100, Number(ai.facelessFormatLikelihood) || 0));
-    const relevance = Math.max(0, Math.min(100, Number(ai.industrialRelevance) || 0));
+    const relevance = Math.max(0, Math.min(100, Number(ai.nicheFitScore ?? ai.industrialRelevance) || 0));
+    const screenedAt = typeof ai.screenedAt === "string" ? ai.screenedAt : null;
+    const nicheScreeningCurrent = Boolean(screenedAt && new Date(screenedAt).getTime() >= Date.parse("2026-11-21T00:00:00Z"));
+    const nicheFitScore = nicheScreeningCurrent ? relevance : null;
     const consistency = uploadIntervalDays === null ? 0 : Math.max(0, Math.min(100, 100 - Math.max(0, uploadIntervalDays - 7) * 4));
     const growth = growthPercent === null ? 0 : Math.max(0, Math.min(100, 50 + growthPercent * 5));
     const aiProductionScore = Math.round(relevance * .50 + visual * .15 + faceless * .10 + consistency * .15 + growth * .10);
@@ -69,7 +72,7 @@ export async function GET() {
       .map(video=>({title:video.title,views:Number(video.view_count??0),publishedAt:video.published_at,isShort:video.is_short}));
     return {
       id: competitor.id, title: competitor.channel_title, url: competitor.channel_url,
-      aiProductionScore, aiScoreBreakdown: {visual,faceless,relevance,consistency,growth},
+      aiProductionScore, nicheFitScore, nicheScreeningCurrent, nicheScreenedAt: screenedAt, aiScoreBreakdown: {visual,faceless,relevance,consistency,growth},
       aiRecommendation: typeof ai.recommendation === "string" ? ai.recommendation : "not_screened",
       topVideos, recommendedVideos,
       subscribers: currentSubs, totalViews: Number(competitor.view_count ?? 0),
@@ -89,8 +92,9 @@ export async function GET() {
       declining: analytics.filter((item)=>item.trend==="declining").length,
       totalSubscribers: analytics.reduce((sum,item)=>sum+item.subscribers,0),
       videosSampled: analytics.reduce((sum,item)=>sum+item.sampledVideos,0),
-      averageAIProductionScore: analytics.length ? Math.round(analytics.reduce((sum,item)=>sum+item.aiProductionScore,0)/analytics.length) : 0,
+      averageAIProductionScore: analytics.filter((item)=>item.nicheFitScore !== null).length ? Math.round(analytics.filter((item)=>item.nicheFitScore !== null).reduce((sum,item)=>sum+(item.nicheFitScore ?? 0),0)/analytics.filter((item)=>item.nicheFitScore !== null).length) : 0,
+      channelsNeedingRescreen: analytics.filter((item)=>!item.nicheScreeningCurrent).length,
     },
-    methodology: "AI systems creator-fit score is a weighted research heuristic (AI systems niche relevance 50%, visual explainer suitability 15%, technical teaching format suitability 10%, publishing consistency 15%, public growth 10%). It is an initial prioritization signal, not a verified assessment of technical accuracy or teaching quality. Momentum is a separate heuristic from subscriber change between snapshots, sampled public video views and recent upload spacing. It is not YouTube Analytics, watch time, revenue, CTR or guaranteed future growth. At least two snapshots separated by six days are needed for a meaningful growth comparison.",
+    methodology: "Niche fit score is the AI screening relevance score (0–100) based on the channel description and up to five recent public video titles/descriptions, screened against the current AIWithBh@i niche: AI systems architecture and engineering education for IT professionals. Screenings dated before 21 Nov 2026 are marked stale and excluded until re-screened. Visual style, faceless format, upload consistency and growth are separate signals and do not reduce niche fit. Momentum is a separate heuristic, not YouTube Analytics, watch time, revenue, CTR or guaranteed future growth.",
   });
 }
