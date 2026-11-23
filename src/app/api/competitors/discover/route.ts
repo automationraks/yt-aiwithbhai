@@ -286,16 +286,14 @@ export async function POST(request: NextRequest) {
       return Boolean(assessment && assessment.confidenceScore >= MIN_DISCOVERY_SCORE && assessment.nicheRelevance >= MIN_DISCOVERY_SCORE && assessment.recommendation !== "unlikely_match");
     });
 
-    // Scan mode replaces only automatically discovered YouTube rows.
-    // Manually saved/priority channels (is_manual_priority=true) and all
-    // manual_tracked_channels records are deliberately left untouched.
+    // Snapshot prior automatic rows. Scan mode removes stale automatic rows
+    // only after the replacement candidate batch has been saved successfully.
+    const { data: priorAutomaticRows, error: priorAutomaticError } = mode === "scan"
+      ? await supabase.from("competitors").select("id,youtube_channel_id")
+          .eq("owner_id", user.id).eq("is_manual_priority", false)
+      : { data: [], error: null };
+    if (priorAutomaticError) return NextResponse.json({ error: "Could not prepare a safe fresh scan.", details: priorAutomaticError.message }, { status: 500 });
     let removedAutomaticChannels = 0;
-    if (mode === "scan") {
-      const { data: removed, error: clearError } = await supabase.from("competitors")
-        .delete().eq("owner_id", user.id).eq("is_manual_priority", false).select("id");
-      if (clearError) return NextResponse.json({ error: "Fresh scan could not clear previous automatically discovered channels.", details: clearError.message }, { status: 500 });
-      removedAutomaticChannels = removed?.length ?? 0;
-    }
 
     const discoveredIds = candidates.map((channel) => channel.id);
     const { data: existingRows, error: existingError } = discoveredIds.length
@@ -343,6 +341,18 @@ export async function POST(request: NextRequest) {
       const { data, error } = await supabase.from("competitors").upsert(rows, { onConflict: "owner_id,youtube_channel_id" }).select("id");
       if (error) return NextResponse.json({ error: "YouTube search succeeded, but saving discovered channels failed.", details: error.message }, { status: 500 });
       saved = data?.length ?? 0;
+    }
+
+    if (mode === "scan") {
+      const keepIds = new Set(discoveredIds);
+      const staleIds = (priorAutomaticRows ?? []).filter(row => !keepIds.has(row.youtube_channel_id)).map(row => row.id);
+      for (let index = 0; index < staleIds.length; index += 100) {
+        const batch = staleIds.slice(index, index + 100);
+        const { data: removed, error: clearError } = await supabase.from("competitors")
+          .delete().eq("owner_id", user.id).eq("is_manual_priority", false).in("id", batch).select("id");
+        if (clearError) return NextResponse.json({ error: "New channels were saved, but old automatically discovered channels could not be fully cleared.", details: clearError.message, saved, removedAutomaticChannels }, { status: 500 });
+        removedAutomaticChannels += removed?.length ?? 0;
+      }
     }
 
     const { data: quota } = await supabase.rpc("get_youtube_quota_status");
