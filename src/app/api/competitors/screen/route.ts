@@ -84,7 +84,7 @@ Do NOT confuse creators who merely discuss AI news, AI tools, generic prompt tip
 
 Return ONLY JSON with this exact structure:
 {
- "industrialRelevance": 0,
+ "nicheFitScore": 0,
  "facelessFormatLikelihood": 0,
  "syntheticVisualStyleLikelihood": 0,
  "aiProductionDisclosure": "explicit" | "none_found" | "unclear",
@@ -94,7 +94,7 @@ Return ONLY JSON with this exact structure:
  "limitations": ["what cannot be verified"]
 }
 
-Use industrialRelevance as the legacy numeric field for AI-systems niche relevance (0-100): score relevance to the target technical education niche, not manufacturing. Use facelessFormatLikelihood as technical teaching format suitability and syntheticVisualStyleLikelihood as visual explainer/diagram suitability; neither is a requirement. A strong_candidate requires repeated evidence of substantive AI systems architecture and engineering education aimed at developers/IT professionals. Penalize generic AI news, tool roundups and nontechnical content. Include specific evidence and uncertainty.`;
+Use nicheFitScore (0-100) exclusively for relevance to the current AI systems architecture and engineering education niche. Do not score generic industrial manufacturing relevance. Use facelessFormatLikelihood as technical teaching format suitability and syntheticVisualStyleLikelihood as visual explainer/diagram suitability; neither is a requirement. A strong_candidate requires repeated evidence of substantive AI systems architecture and engineering education aimed at developers/IT professionals. Penalize generic AI news, tool roundups and nontechnical content. Include specific evidence and uncertainty.`;
 
 function parseResult(text: string) {
   const cleaned = text.replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/, "").trim();
@@ -104,7 +104,8 @@ function parseResult(text: string) {
   const narration = ["explicit_synthetic", "explicit_human", "unknown"].includes(value.narrationEvidence) ? value.narrationEvidence : "unknown";
   const recommendation = ["strong_candidate", "possible_candidate", "unlikely_match"].includes(value.recommendation) ? value.recommendation : "possible_candidate";
   return {
-    industrialRelevance: score(value.industrialRelevance),
+    nicheFitScore: score(value.nicheFitScore ?? value.industrialRelevance),
+    industrialRelevance: score(value.nicheFitScore ?? value.industrialRelevance),
     facelessFormatLikelihood: score(value.facelessFormatLikelihood),
     syntheticVisualStyleLikelihood: score(value.syntheticVisualStyleLikelihood),
     aiProductionDisclosure: disclosure,
@@ -246,7 +247,7 @@ export async function POST(request: NextRequest) {
   }
 
   const aiScreening = {
-    ...result, provider, screenedAt: new Date().toISOString(), imagesAnalyzed: imagesUsed,
+    ...result, nicheVersion: "aiwithbhai-ai-systems-v1", provider, screenedAt: new Date().toISOString(), imagesAnalyzed: imagesUsed,
     sampleVideosAnalyzed: Math.min(samples.length, 5),
     status: "advisory_only",
     narrationVerification: result.narrationEvidence === "unknown" ? "Not verified; no audio/transcript was supplied." : "Based on explicit public creator disclosure, not direct audio verification.",
