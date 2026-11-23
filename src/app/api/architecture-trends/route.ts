@@ -87,14 +87,14 @@ export async function POST() {
         design_considerations: Array.isArray(item.designConsiderations) ? item.designConsiderations.slice(0, 10) : [],
         tradeoffs: Array.isArray(item.tradeoffs) ? item.tradeoffs.slice(0, 10) : [],
         source_links: links, source_video_ids: vids,
-        confidence_score: Math.max(0, Math.min(100, Number(item.confidenceScore) || 0)),
+        confidence_score: (() => { const score = Number(item.confidenceScore); const percentage = Number.isFinite(score) ? (score >= 0 && score <= 1 ? score * 100 : score) : 0; return Math.round(Math.max(0, Math.min(100, percentage))); })(),
         evidence_note: String(item.evidenceNote ?? "Verify company-specific deployment claims before publishing."),
         generated_by: result.provider, updated_at: new Date().toISOString(),
       };
     }).filter(x => x.title && x.trend_key);
     if (!trends.length) return NextResponse.json({ error: "AI did not return usable architecture trends." }, { status: 502 });
     const { data, error } = await s.from("architecture_trends").upsert(trends, { onConflict: "owner_id,trend_key" }).select("*");
-    if (error) return NextResponse.json({ error: "Could not save architecture trends.", details: error.message, code: error.code, hint: error.hint, action: "Run supabase/migrations/20261123_architecture_trends_repair.sql in the Supabase SQL Editor, then retry." }, { status: 500 });
+    if (error) return NextResponse.json({ error: "Could not save architecture trends.", details: error.message, code: error.code, hint: error.hint, action: "The confidence score is normalized to an integer percentage before saving. If this persists, inspect the live table column types." }, { status: 500 });
     return NextResponse.json({ trends: data ?? [], generated: trends.length, provider: result.provider, fallbackUsed: result.fallbackUsed, shortlistedChannels: channels?.length ?? 0, referenceVideosAvailable: videos.length });
   } catch (error) {
     return NextResponse.json({ error: error instanceof Error ? error.message : "Trend generation failed." }, { status: 502 });
