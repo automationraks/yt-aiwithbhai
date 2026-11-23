@@ -38,7 +38,7 @@ async function gemini(system: string, prompt: string, schema?: JsonSchema): Prom
     headers: { "Content-Type": "application/json", "x-goog-api-key": key },
     body: JSON.stringify({
       model, input: prompt, system_instruction: system,
-      generation_config: { max_output_tokens: 3500, thinking_level: "minimal" },
+      generation_config: { max_output_tokens: 7000, thinking_level: "minimal" },
       response_format: { type: "text", mime_type: "application/json", ...(schema ? { schema } : {}) },
       store: false,
     }),
