@@ -166,39 +166,32 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: `Provide language "hi" or "en" and at least one keyword (maximum 80 characters each).` }, { status: 400 });
   }
 
-  // YouTube search.list costs 100 quota units per request. Pack phrases
-  // together only after reserving space for exclusions, so every final q fits.
+  // YouTube search.list costs 100 quota units per request.
+  // Long exact phrases plus date/medium filters were too restrictive and returned
+  // zero candidates. Build six short, broad technical searches; relevance-ranked
+  // results include both tutorials and implementation case studies.
   const MAX_SEARCH_REQUESTS = 6;
-  const MAX_QUERY_LENGTH = 450;
-  // Keep high-signal exclusions compact to preserve room for the user's topics.
   const excludedSearchTerms = [
-    '-kids', '-cartoon', '-nursery', '-rhymes', '-trading', '-nifty', '-sensex',
-    '-intraday', '-"stock market"', '-"share market"', '-"options trading"', '-"investment tips"'
+    "-kids", "-cartoon", "-nursery", "-rhymes", '-"stock market"', '-"share market"',
+    "-trading", "-nifty", "-sensex", '-"investment tips"'
   ].join(" ");
-  const availableKeywordLength = MAX_QUERY_LENGTH - excludedSearchTerms.length - 1;
-  const searchQueries: string[] = [];
-  let queryTerms: string[] = [];
-  for (const keyword of keywords) {
-    const term = `"${keyword.replace(/"/g, "").trim()}"`;
-    const candidate = [...queryTerms, term].join("|");
-    if (candidate.length > availableKeywordLength && queryTerms.length) {
-      searchQueries.push(queryTerms.join("|") + " " + excludedSearchTerms);
-      queryTerms = [term];
-    } else {
-      queryTerms.push(term);
-    }
-  }
-  if (queryTerms.length) searchQueries.push(queryTerms.join("|") + " " + excludedSearchTerms);
-  if (searchQueries.some((query) => query.length > MAX_QUERY_LENGTH)) {
-    return NextResponse.json({ error: "A keyword is too long to fit the YouTube query limit alongside the safety exclusions. Shorten that keyword.", maximumQueryLength: MAX_QUERY_LENGTH }, { status: 400 });
-  }
-  if (searchQueries.length > MAX_SEARCH_REQUESTS) {
-    return NextResponse.json({
-      error: `These keywords require ${searchQueries.length} search groups. The current quota-aware limit is ${MAX_SEARCH_REQUESTS} groups (up to ${MAX_SEARCH_REQUESTS * 100} YouTube search quota units). Remove a few keywords or split discovery into multiple runs.`,
-      searchGroupsRequired: searchQueries.length,
-      maximumSearchRequests: MAX_SEARCH_REQUESTS,
-    }, { status: 400 });
-  }
+  const nicheSearchGroups = [
+    '"AI engineering"|"LLM engineering"|"AI engineer"',
+    '"RAG"|"retrieval augmented generation"|"vector database"',
+    '"AI agents"|"agentic AI"|"LangGraph"|"LLM agents"',
+    '"LLMOps"|"MLOps"|"LLM deployment"|"model serving"',
+    '"AI system design"|"AI architecture"|"enterprise AI"',
+    '"LLM application"|"AI API integration"|"production LLM"'
+  ];
+  // Preserve user-provided keywords as additional context, but do not require
+  // exact long phrases for discovery. The curated groups keep search broad.
+  const userTerms = keywords
+    .map((keyword) => keyword.replace(/["|]/g, " ").replace(/\s+/g, " ").trim())
+    .filter(Boolean);
+  const searchQueries = nicheSearchGroups.map((group, index) => {
+    const extra = userTerms[index] ? ' "' + userTerms[index].slice(0, 55) + '"' : "";
+    return (group + extra + " " + excludedSearchTerms).slice(0, 450);
+  });
 
   const { count, error: countError } = await supabase.from("competitors").select("id", { count: "exact", head: true }).eq("owner_id", user.id).eq("is_active", true);
   if (countError) return NextResponse.json({ error: "Could not check your active competitor limit." }, { status: 500 });
@@ -213,7 +206,7 @@ export async function POST(request: NextRequest) {
       const reservation = await reserveQuota(supabase, "search");
       if (!reservation.allowed) return NextResponse.json({ error: "Daily YouTube search request limit reached.", quota: reservation }, { status: 429 });
       const search = await youtubeGet<{ items?: Array<{ id?: { videoId?: string }; snippet?: { channelId?: string; title?: string; description?: string; channelTitle?: string; publishedAt?: string; thumbnails?: { medium?: { url?: string }; default?: { url?: string } } } }> }>("search", {
-        part: "snippet", type: "video", maxResults: "25", q: searchQuery, relevanceLanguage: language, order: "date", videoDuration: "medium",
+        part: "snippet", type: "video", maxResults: "50", q: searchQuery, relevanceLanguage: language, order: "relevance",
       });
       for (const item of search.items ?? []) {
         const channelId = item.snippet?.channelId;
@@ -371,7 +364,7 @@ export async function POST(request: NextRequest) {
 
     const { data: quota } = await supabase.rpc("get_youtube_quota_status");
     return NextResponse.json({
-      searchedKeywords: keywords, searchQueriesUsed: searchQueries, youtubeSearchRequests: searchQueries.length, language, channelsDiscovered: channelIds.size,
+      searchedKeywords: keywords, searchQueriesUsed: searchQueries, youtubeSearchRequests: searchQueries.length, language, channelsDiscovered: channelIds.size, searchResultsCollected: [...samplesByChannel.values()].reduce((total, samples) => total + samples.length, 0),
       channelsAIassessed: assessments.size,
       channelsExcludedByTopic: topicExcludedIds.size,
       manuallyApprovedChannelsSkipped: manualPriorityIds.size,
