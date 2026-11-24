@@ -18,7 +18,9 @@ async function upload(file,dest){const data=await fs.readFile(file);const {error
 async function callback(job,payload){const r=await fetch(job.callbackUrl,{method:"POST",headers:{"content-type":"application/json","x-production-callback-secret":process.env.N8N_WEBHOOK_SECRET},body:JSON.stringify(payload),signal:AbortSignal.timeout(30000)});const d=await r.json().catch(()=>({}));if(!r.ok)throw new Error("Production callback rejected "+r.status+": "+(d.error||d.reason||"unknown"));return d;}
 async function claim(){const {data,error}=await db.from("video_render_jobs").select("*").eq("status","queued").order("created_at").limit(1).maybeSingle();if(error)throw error;if(!data)return null;const {data:row,error:e}=await db.from("video_render_jobs").update({status:"processing",started_at:new Date().toISOString(),attempts:(data.attempts||0)+1,updated_at:new Date().toISOString()}).eq("id",data.id).eq("status","queued").select("*").maybeSingle();if(e)throw e;return row;}
 async function process(row){
- const j=row.payload,crypto=await import("node:crypto");if(!j||!j.approvedScript||!Array.isArray(j.segments)||!j.callbackUrl)throw new Error("Queue payload incomplete.");
+ const j=row.payload,crypto=await import("node:crypto");
+ const {error:ideaStatusError}=await db.from("content_ideas").update({video_production_status:"processing",video_verification:{stage:"local_rendering",jobId:row.id}}).eq("id",row.idea_id).eq("owner_id",row.owner_id);
+ if(ideaStatusError)throw ideaStatusError;if(!j||!j.approvedScript||!Array.isArray(j.segments)||!j.callbackUrl)throw new Error("Queue payload incomplete.");
  const hash=crypto.createHash("sha256").update(j.approvedScript,"utf8").digest("hex");if(hash!==row.script_hash||hash!==j.scriptHash)throw new Error("Approved script SHA-256 mismatch.");
  if(j.segments.some((s,i)=>s.sequence!==i+1||!s.outputStoragePath))throw new Error("Segments are missing or out of order.");
  const work=path.join(temp,row.id);await fs.mkdir(work,{recursive:true});await fs.mkdir(output,{recursive:true});
