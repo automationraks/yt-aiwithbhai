@@ -1,0 +1,7 @@
+.env
+node_modules/
+output/
+temp/
+assets/stock/*
+!assets/stock/README.md
+*.log
