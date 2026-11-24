@@ -136,3 +136,6 @@ select cron.schedule(
   '*/10 * * * *',
   'select public.rotate_youtube_research_queue();'
 );
+
+-- Seed the first selection immediately; the scheduled job maintains the 10-minute cadence.
+select public.rotate_youtube_research_queue();
