@@ -407,3 +407,16 @@ The repository contains application code and integration points. Each external s
 **Research broadly. Explain clearly. Create originally. Review carefully. Publish deliberately.**
 
 That is the architecture behind AIWithBh@i Studio.
+
+
+## Local video production pilot
+
+The repository now includes importable n8n workflows and a Windows FFmpeg worker for the 14-day pilot:
+
+- `n8n/daily-content-research.json` — daily 6:00 AM IST research hand-off.
+- `n8n/approved-video-production.json` — validates the frozen approved script and queues a render job.
+- `local-worker/` — outbound-polling Gemini TTS + FFmpeg + faster-whisper renderer.
+- `docs/14-day-pilot-setup.md` — Supabase migration, Vercel variables, n8n credentials/import, Windows setup and test plan.
+- `docs/n8n-import-and-credentials.md` — compact n8n import reference.
+
+The worker does not need an inbound public URL or Cloudflare Tunnel. It polls the private Supabase queue over outbound HTTPS. Video publishing remains manual. Apply the migrations and configure the account-specific secrets before activating either workflow.
