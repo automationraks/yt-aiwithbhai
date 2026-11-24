@@ -19,7 +19,7 @@ export async function GET() {
   const ids = competitors.map((item) => item.id);
   const [channelHistory, videoRows] = await Promise.all([
     supabase.from("competitor_snapshots").select("competitor_id,subscriber_count,view_count,captured_at").in("competitor_id", ids).order("captured_at", { ascending: false }),
-    supabase.from("videos").select("id,competitor_id,title,view_count,published_at,is_short").in("competitor_id", ids).order("published_at", { ascending: false }),
+    supabase.from("videos").select("id,competitor_id,youtube_video_id,title,description,view_count,published_at,is_short,video_url,thumbnail_url").in("competitor_id", ids).eq("is_niche_relevant", true).order("published_at", { ascending: false }),
   ]);
   if (channelHistory.error || videoRows.error) return NextResponse.json({ error: "Could not load analytics history.", details: channelHistory.error?.message ?? videoRows.error?.message }, { status: 500 });
 
@@ -42,11 +42,15 @@ export async function GET() {
     const uploadIntervalDays = intervals.length ? intervals.reduce((a,b)=>a+b,0)/intervals.length : null;
     const averageViews = videos.length ? Math.round(videos.reduce((sum,video)=>sum+Number(video.view_count??0),0)/videos.length) : 0;
     const evidence = competitor.ai_production_evidence && typeof competitor.ai_production_evidence === "object"
-      ? competitor.ai_production_evidence as Record<string, any> : {};
-    const ai = evidence.aiScreening && typeof evidence.aiScreening === "object" ? evidence.aiScreening : {};
+      ? competitor.ai_production_evidence as { aiScreening?: Record<string, unknown> }
+      : {};
+    const ai = evidence.aiScreening ?? {};
     const visual = Math.max(0, Math.min(100, Number(ai.syntheticVisualStyleLikelihood) || 0));
     const faceless = Math.max(0, Math.min(100, Number(ai.facelessFormatLikelihood) || 0));
-    const relevance = Math.max(0, Math.min(100, Number(ai.industrialRelevance) || 0));
+    const relevance = Math.max(0, Math.min(100, Number(ai.nicheFitScore ?? ai.industrialRelevance) || 0));
+    const screenedAt = typeof ai.screenedAt === "string" ? ai.screenedAt : null;
+    const nicheScreeningCurrent = ai.nicheVersion === "aiwithbhai-ai-systems-v1";
+    const nicheFitScore = nicheScreeningCurrent ? relevance : null;
     const consistency = uploadIntervalDays === null ? 0 : Math.max(0, Math.min(100, 100 - Math.max(0, uploadIntervalDays - 7) * 4));
     const growth = growthPercent === null ? 0 : Math.max(0, Math.min(100, 50 + growthPercent * 5));
     const aiProductionScore = Math.round(relevance * .50 + visual * .15 + faceless * .10 + consistency * .15 + growth * .10);
@@ -56,13 +60,21 @@ export async function GET() {
       (uploadIntervalDays === null ? 0 : Math.max(0,25-Math.max(0,uploadIntervalDays-7)*1.5)) +
       (videos.length >= 5 ? 10 : videos.length*2)
     )));
+    const explorerEvidence = competitor.ai_production_evidence && typeof competitor.ai_production_evidence === "object"
+      ? competitor.ai_production_evidence as { sampleVideos?: Array<{ videoId?: string | null; title?: string; videoUrl?: string | null; thumbnailUrl?: string | null; matchedQuery?: string }> }
+      : {};
+    const recommendedIds = new Set((explorerEvidence.sampleVideos ?? []).map((sample) => sample.videoId).filter((id): id is string => Boolean(id)));
+    const recommendedVideos = videos.filter((video) => recommendedIds.has(video.youtube_video_id)).map((video) => {
+      const source = (explorerEvidence.sampleVideos ?? []).find((sample) => sample.videoId === video.youtube_video_id);
+      return { id: video.youtube_video_id, title: video.title, views: Number(video.view_count ?? 0), publishedAt: video.published_at, isShort: video.is_short, url: video.video_url ?? "https://www.youtube.com/watch?v=" + video.youtube_video_id, thumbnailUrl: video.thumbnail_url, matchedQuery: source?.matchedQuery ?? null };
+    });
     const topVideos = videos.slice().sort((a,b)=>Number(b.view_count??0)-Number(a.view_count??0)).slice(0,3)
       .map(video=>({title:video.title,views:Number(video.view_count??0),publishedAt:video.published_at,isShort:video.is_short}));
     return {
       id: competitor.id, title: competitor.channel_title, url: competitor.channel_url,
-      aiProductionScore, aiScoreBreakdown: {visual,faceless,relevance,consistency,growth},
-      aiRecommendation: ai.recommendation ?? "not_screened",
-      topVideos,
+      aiProductionScore, nicheFitScore, nicheScreeningCurrent, nicheScreenedAt: screenedAt, aiScoreBreakdown: {visual,faceless,relevance,consistency,growth},
+      aiRecommendation: typeof ai.recommendation === "string" ? ai.recommendation : "not_screened",
+      topVideos, recommendedVideos,
       subscribers: currentSubs, totalViews: Number(competitor.view_count ?? 0),
       subscriberDelta, growthPercent: growthPercent === null ? null : Number(growthPercent.toFixed(2)),
       snapshotCount: history.length, lastSnapshotAt: recent?.captured_at ?? null,
@@ -80,8 +92,9 @@ export async function GET() {
       declining: analytics.filter((item)=>item.trend==="declining").length,
       totalSubscribers: analytics.reduce((sum,item)=>sum+item.subscribers,0),
       videosSampled: analytics.reduce((sum,item)=>sum+item.sampledVideos,0),
-      averageAIProductionScore: analytics.length ? Math.round(analytics.reduce((sum,item)=>sum+item.aiProductionScore,0)/analytics.length) : 0,
+      averageAIProductionScore: analytics.filter((item)=>item.nicheFitScore !== null).length ? Math.round(analytics.filter((item)=>item.nicheFitScore !== null).reduce((sum,item)=>sum+(item.nicheFitScore ?? 0),0)/analytics.filter((item)=>item.nicheFitScore !== null).length) : 0,
+      channelsNeedingRescreen: analytics.filter((item)=>!item.nicheScreeningCurrent).length,
     },
-    methodology: "AI systems creator-fit score is a weighted research heuristic (AI systems niche relevance 50%, visual explainer suitability 15%, technical teaching format suitability 10%, publishing consistency 15%, public growth 10%). It is an initial prioritization signal, not a verified assessment of technical accuracy or teaching quality. Momentum is a separate heuristic from subscriber change between snapshots, sampled public video views and recent upload spacing. It is not YouTube Analytics, watch time, revenue, CTR or guaranteed future growth. At least two snapshots separated by six days are needed for a meaningful growth comparison.",
+    methodology: "Niche fit score is the AI screening relevance score (0–100) based on the channel description and up to five recent public video titles/descriptions, screened against the current AIWithBh@i niche: AI systems architecture and engineering education for IT professionals. Screenings dated before 21 Nov 2026 are marked stale and excluded until re-screened. Visual style, faceless format, upload consistency and growth are separate signals and do not reduce niche fit. Momentum is a separate heuristic, not YouTube Analytics, watch time, revenue, CTR or guaranteed future growth.",
   });
 }

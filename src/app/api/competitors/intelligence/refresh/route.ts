@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
+import { generateResearchJson } from "@/lib/ai/research";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -14,6 +15,7 @@ type VideoItem = {
   contentDetails?: { duration?: string };
   statistics?: { viewCount?: string; likeCount?: string; commentCount?: string };
 };
+type NicheAssessment = { videoId: string; relevant: boolean; score: number; reason: string };
 
 async function reserveQuota(supabase: NonNullable<Awaited<ReturnType<typeof createSupabaseServerClient>>>) {
   const { data, error } = await supabase.rpc("reserve_youtube_quota", { p_bucket: "general", p_amount: 1 });
@@ -34,8 +36,44 @@ async function youtubeGet<T>(resource: string, params: Record<string, string>): 
 
 function durationSeconds(value?: string) {
   if (!value) return 0;
-  const match = value.match(/^PT(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?$/);
+  const match = value.match(/^PT(?:(\\d+)H)?(?:(\\d+)M)?(?:(\\d+)S)?$/);
   return match ? Number(match[1] ?? 0) * 3600 + Number(match[2] ?? 0) * 60 + Number(match[3] ?? 0) : 0;
+}
+
+async function assessNicheVideos(videos: VideoItem[]) {
+  if (!videos.length) return new Map<string, NicheAssessment>();
+  const system = "You are a strict editorial classifier for AIWithBh@i, a technical education channel for software engineers, architects and IT professionals. The niche is AI system design and engineering: production LLM applications, RAG, vector databases, AI agents/orchestration, inference/serving, GPU optimization, AI developer tools and APIs, evaluation/observability, AI security/governance, cloud AI platforms, enterprise AI architecture and real-world AI implementations. Reject generic technology news without technical depth, generic coding unrelated to AI, entertainment, gaming, kids content, lifestyle, unrelated tutorials, and videos that only mention AI incidentally. Judge each VIDEO from title and description, not channel name. Mark relevant only when there is clear topical evidence. Return JSON only: {assessments:[{videoId,relevant,score,reason}]}. Use score 0-100. A video is relevant only if score >= 81. Include every supplied videoId exactly once; never invent IDs.";
+  // Compact sequential batches keep each prompt below Groq's 8K TPM tier.
+  const AI_BATCH_SIZE = 8;
+  const assessments = new Map<string, NicheAssessment>();
+  for (let offset = 0; offset < videos.length; offset += AI_BATCH_SIZE) {
+    const batch = videos.slice(offset, offset + AI_BATCH_SIZE);
+    const compact = batch.map((video) => ({
+      videoId: video.id,
+      title: (video.snippet?.title ?? "").slice(0, 180),
+      description: (video.snippet?.description ?? "").slice(0, 350),
+    }));
+    // Video Explorer must not compete for Groq's shared 8K TPM pool.
+    // Gemini is selected explicitly; no Groq fallback for this workload.
+    const result = await generateResearchJson(system, JSON.stringify({ channel: "AIWithBh@i", videos: compact }), { preferredProvider: "gemini", allowFallback: false });
+    const raw = result.data as { assessments?: Array<Record<string, unknown>> };
+    const valid = new Set(batch.map((video) => video.id));
+    for (const item of Array.isArray(raw.assessments) ? raw.assessments : []) {
+      if (typeof item.videoId !== "string" || !valid.has(item.videoId) || assessments.has(item.videoId)) continue;
+      const score = Math.max(0, Math.min(100, Math.round(Number(item.score) || 0)));
+      assessments.set(item.videoId, {
+        videoId: item.videoId,
+        relevant: item.relevant === true && score >= 81,
+        score,
+        reason: typeof item.reason === "string" ? item.reason.slice(0, 400) : "No reason supplied.",
+      });
+    }
+  }
+  // Fail closed: missing/invalid AI assessments are not considered relevant.
+  for (const video of videos) if (!assessments.has(video.id)) {
+    assessments.set(video.id, { videoId: video.id, relevant: false, score: 0, reason: "No valid niche assessment returned." });
+  }
+  return assessments;
 }
 
 export async function POST() {
@@ -45,12 +83,13 @@ export async function POST() {
   if (authError || !user) return NextResponse.json({ error: "Unauthorized." }, { status: 401 });
   if (!process.env.YOUTUBE_API_KEY) return NextResponse.json({ error: "YOUTUBE_API_KEY is not configured." }, { status: 503 });
 
+  // Only explicitly approved, active channels are scanned.
   const { data: competitors, error } = await supabase.from("competitors")
-    .select("id,youtube_channel_id,channel_title")
+    .select("id,youtube_channel_id,channel_title,ai_production_evidence,is_manual_priority")
     .eq("owner_id", user.id).eq("is_active", true).eq("ai_production_status", "qualified")
-    .order("last_checked_at", { ascending: true, nullsFirst: true }).limit(BATCH_SIZE);
-  if (error) return NextResponse.json({ error: "Could not load qualified competitors.", details: error.message }, { status: 500 });
-  if (!competitors?.length) return NextResponse.json({ processed: 0, message: "No active, qualified competitors are waiting for refresh." });
+    .order("is_manual_priority", { ascending: false }).order("last_checked_at", { ascending: true, nullsFirst: true }).limit(BATCH_SIZE);
+  if (error) return NextResponse.json({ error: "Could not load approved active competitors.", details: error.message }, { status: 500 });
+  if (!competitors?.length) return NextResponse.json({ processed: 0, videosFetched: 0, videosMatchedNiche: 0, message: "No approved active competitors are waiting for refresh." });
 
   try {
     await reserveQuota(supabase);
@@ -58,7 +97,17 @@ export async function POST() {
       part: "statistics,contentDetails", id: competitors.map((item) => item.youtube_channel_id).join(","), maxResults: String(BATCH_SIZE),
     });
     const channelMap = new Map((channelResult.items ?? []).map((item) => [item.id, item]));
-    const samples: Array<{ channel: typeof competitors[number]; videoId: string } > = [];
+    const videoChannelMap = new Map<string, string>();
+
+    // Re-check Creator Explorer sample matches and latest uploads from active channels.
+    for (const competitor of competitors) {
+      const evidence = competitor.ai_production_evidence && typeof competitor.ai_production_evidence === "object"
+        ? competitor.ai_production_evidence as { sampleVideos?: Array<{ videoId?: string | null }> }
+        : {};
+      for (const sample of evidence.sampleVideos ?? []) {
+        if (sample.videoId) videoChannelMap.set(sample.videoId, competitor.id);
+      }
+    }
 
     for (const competitor of competitors) {
       const uploads = channelMap.get(competitor.youtube_channel_id)?.contentDetails?.relatedPlaylists?.uploads;
@@ -69,12 +118,12 @@ export async function POST() {
       });
       for (const item of playlist.items ?? []) {
         const videoId = item.contentDetails?.videoId;
-        if (videoId) samples.push({ channel: competitor, videoId });
+        if (videoId) videoChannelMap.set(videoId, competitor.id);
       }
     }
 
-    const videoIds = [...new Set(samples.map((item) => item.videoId))];
-    let videos: VideoItem[] = [];
+    const videoIds = [...videoChannelMap.keys()];
+    const videos: VideoItem[] = [];
     for (let index = 0; index < videoIds.length; index += 50) {
       await reserveQuota(supabase);
       const result = await youtubeGet<{ items?: VideoItem[] }>("videos", {
@@ -83,34 +132,46 @@ export async function POST() {
       videos.push(...(result.items ?? []));
     }
 
-    const videoRows = videos.map((video) => ({
-      owner_id: user.id,
-      competitor_id: competitors.find((item) => item.youtube_channel_id === video.snippet?.channelId)?.id ?? null,
-      youtube_video_id: video.id,
-      title: video.snippet?.title ?? "Untitled video",
-      description: (video.snippet?.description ?? "").slice(0, 5000),
-      published_at: video.snippet?.publishedAt ?? null,
-      duration_seconds: durationSeconds(video.contentDetails?.duration),
-      view_count: video.statistics?.viewCount ?? null,
-      like_count: video.statistics?.likeCount ?? null,
-      comment_count: video.statistics?.commentCount ?? null,
-      is_short: durationSeconds(video.contentDetails?.duration) <= 180,
-      thumbnail_url: video.snippet?.thumbnails?.high?.url ?? video.snippet?.thumbnails?.medium?.url ?? null,
-      video_url: `https://www.youtube.com/watch?v=${video.id}`,
-      language: video.snippet?.defaultLanguage ?? null,
-    }));
+    const assessments = await assessNicheVideos(videos);
+    const relevantVideos = videos.filter((video) => assessments.get(video.id)?.relevant);
+    const relevantIds = new Set(relevantVideos.map((video) => video.id));
+    // Save all classifications in one upsert. Off-niche rows remain auditable,
+    // but every downstream research view filters to is_niche_relevant=true.
+    const videoRows = videos.map((video) => {
+      const assessment = assessments.get(video.id)!;
+      const duration = durationSeconds(video.contentDetails?.duration);
+      return {
+        owner_id: user.id,
+        competitor_id: videoChannelMap.get(video.id) ?? null,
+        youtube_video_id: video.id,
+        title: video.snippet?.title ?? "Untitled video",
+        description: (video.snippet?.description ?? "").slice(0, 5000),
+        published_at: video.snippet?.publishedAt ?? null,
+        duration_seconds: duration,
+        view_count: video.statistics?.viewCount ?? null,
+        like_count: video.statistics?.likeCount ?? null,
+        comment_count: video.statistics?.commentCount ?? null,
+        is_short: duration <= 180,
+        thumbnail_url: video.snippet?.thumbnails?.high?.url ?? video.snippet?.thumbnails?.medium?.url ?? null,
+        video_url: `https://www.youtube.com/watch?v=${video.id}`,
+        language: video.snippet?.defaultLanguage ?? null,
+        is_niche_relevant: assessment.relevant,
+        niche_relevance_score: assessment.score,
+        niche_relevance_reason: assessment.reason,
+      };
+    });
 
     let savedVideos: Array<{ id: string; youtube_video_id: string }> = [];
     if (videoRows.length) {
       const { data, error: saveError } = await supabase.from("videos")
         .upsert(videoRows, { onConflict: "owner_id,youtube_video_id" })
         .select("id,youtube_video_id");
-      if (saveError) throw new Error(`Saving video records failed: ${saveError.message}`);
-      savedVideos = data ?? [];
+      if (saveError) throw new Error(`Saving classified video records failed: ${saveError.message}`);
+      savedVideos = (data ?? []).filter((row) => relevantIds.has(row.youtube_video_id));
     }
 
     const snapshots = savedVideos.map((saved) => {
-      const source = videos.find((video) => video.id === saved.youtube_video_id);
+      const source = relevantVideos.find((video) => video.id === saved.youtube_video_id);
       return {
         video_id: saved.id,
         view_count: Number(source?.statistics?.viewCount ?? 0),
@@ -146,22 +207,27 @@ export async function POST() {
         video_count: stats.videoCount ?? null,
         view_count: stats.viewCount ?? null,
         last_checked_at: now,
-      }).eq("id", competitor.id).eq("owner_id", user.id);
+      }).eq("id", competitor.id).eq("owner_id", user.id).eq("is_active", true).eq("ai_production_status", "qualified");
       if (updateError) throw new Error(`Updating ${competitor.channel_title} failed: ${updateError.message}`);
       return competitor.id;
     }));
 
+    const activeCount = (await supabase.from("competitors").select("id", { count: "exact", head: true })
+      .eq("owner_id", user.id).eq("is_active", true).eq("ai_production_status", "qualified")).count ?? 0;
     return NextResponse.json({
       processed: updates.filter(Boolean).length,
+      activeChannelsScanned: competitors.length,
       videosFetched: videos.length,
+      videosMatchedNiche: relevantVideos.length,
+      videosExcludedAsOffNiche: videos.length - relevantVideos.length,
       videoSnapshotsSaved: snapshots.length,
       competitorSnapshotsSaved: channelSnapshots.length,
       batchSize: BATCH_SIZE,
-      remainingActiveCompetitors: Math.max(0, ((await supabase.from("competitors").select("id", { count: "exact", head: true }).eq("owner_id", user.id).eq("is_active", true).eq("ai_production_status", "qualified")).count ?? 0) - updates.filter(Boolean).length),
-      message: "Competitor statistics, latest uploads and historical snapshots have been refreshed.",
+      remainingActiveCompetitors: Math.max(0, activeCount - updates.filter(Boolean).length),
+      message: "Only approved active channels were scanned. AI-classified niche-matched videos and current public metrics were saved.",
     });
   } catch (err) {
-    const message = err instanceof Error ? err.message : "Competitor intelligence refresh failed.";
-    return NextResponse.json({ error: message }, { status: message.includes("quota") ? 429 : 502 });
+    const message = err instanceof Error ? err.message : "Video/competitor refresh failed.";
+    return NextResponse.json({ error: message }, { status: message.toLowerCase().includes("quota") ? 429 : 502 });
   }
 }

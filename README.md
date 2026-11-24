@@ -56,10 +56,36 @@ The starter keyword action seeds English and Hindi searches for AI system design
 Creator discovery returns candidates. AI screening is advisory and cannot establish technical correctness or substitute for watching sample videos. Manually approve creators before including them in the active research set.
 
 ## AI providers
-Set `GEMINI_API_KEY` for Gemini screening. Optional `GEMINI_MODEL` defaults to `gemini-2.5-flash-lite`. Groq fallback uses `GROQ_API_KEY` and optional `GROQ_MODEL` (default `openai/gpt-oss-120b`).
+Set `GEMINI_API_KEY` for Gemini screening. Optional `GEMINI_MODEL` defaults to `gemini-3.5-flash-lite`. Gemini calls use Google's Interactions API (`/v1beta/interactions`) with stateless requests (`store: false`) and JSON response formatting. Groq fallback uses `GROQ_API_KEY` and optional `GROQ_MODEL` (default `openai/gpt-oss-120b`). Video Explorer classification is pinned to Gemini and does not fall back to Groq.
 
 ## Local development
 Install dependencies with `npm install`, copy `.env.example` to `.env.local`, add server-side credentials and run `npm run dev`.
 
 ## Automation boundary
 Manual research and refresh endpoints do not create scheduled workflows. Configure and activate n8n Cloud workflows separately. Publishing and channel-setting changes must remain approval-gated.
+
+## Instagram Discovery (official Meta APIs)
+
+The Instagram Discovery page connects a professional Instagram Business/Creator account through Meta OAuth and uses the Instagram Graph API / Business Discovery for the connected account and manually entered eligible public professional usernames. It saves available captions, post/Reel permalinks, timestamps and engagement counts as research references. It does not scrape Instagram, search all public Reels, download third-party videos or republish creator media.
+
+### Required server environment variables
+
+- `META_APP_ID`: Meta Developer app ID.
+- `META_APP_SECRET`: Meta Developer app secret.
+- `META_REDIRECT_URI`: exact OAuth callback URL, e.g. `https://YOUR_DOMAIN/api/instagram/callback`. Register the same URL in the Meta app.
+- `META_GRAPH_VERSION`: optional Graph API version; defaults to `v25.0`.
+- `META_TOKEN_ENCRYPTION_KEY`: base64-encoded 32-byte key used for AES-256-GCM encryption of the Page access token.
+- Existing `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_ROLE_KEY`, `GEMINI_API_KEY` (or `GROQ_API_KEY`) are also required.
+
+Generate an encryption key with Node.js: `node -e "console.log(require('crypto').randomBytes(32).toString('base64'))"`. Keep it private and stable; do not commit it or expose it with a `NEXT_PUBLIC_` prefix.
+
+### Meta setup
+
+1. Create/configure a Meta Developer app and add the Facebook Login and Instagram Graph API products required for your app configuration.
+2. Add the exact redirect URL above to Valid OAuth Redirect URIs.
+3. Link the Instagram Business/Creator account to a Facebook Page and ensure the authorizing Facebook user has access to that Page.
+4. Request the least permissions required by the implemented flow: `pages_show_list`, `pages_read_engagement`, `instagram_basic` and `instagram_manage_insights`. Meta may require App Review and Business Verification before accounts outside app roles can be accessed.
+5. Apply `supabase/migrations/20261122_instagram_research_integration.sql` in the Supabase SQL Editor.
+6. Add the environment variables in Vercel and redeploy, then connect from **Research → Instagram Discovery**.
+
+Instagram content is used as a topic signal to create a new original 50–60 second script in Content Calendar. Drafts remain approval-gated. Verify technical claims with primary sources before publishing. API availability and returned fields depend on Meta's current platform eligibility, permissions and API version.

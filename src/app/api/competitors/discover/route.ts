@@ -1,12 +1,15 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
+import { getAIConfiguration } from "@/lib/ai/provider";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 const YOUTUBE_API = "https://www.googleapis.com/youtube/v3";
 const MAX_ACTIVE_COMPETITORS = 100;
-const MAX_KEYWORDS = 5;
+const MAX_CHANNELS_PER_AI_SCREEN = 24;
+const AI_SCREEN_BATCH_SIZE = 2;
+const MIN_DISCOVERY_SCORE = 50;
 
 type QuotaReservation = { allowed: boolean; bucket: string; used: number; limit: number; remaining: number; resetAt: string; quotaDate: string };
 type SampleVideo = {
@@ -24,6 +27,101 @@ type YouTubeChannel = {
   snippet?: { title?: string; description?: string; publishedAt?: string; country?: string; customUrl?: string };
   statistics?: { subscriberCount?: string; videoCount?: string; viewCount?: string };
 };
+
+
+type Assessment = { channelId: string; confidenceScore: number; nicheRelevance: number; recommendation: string; reason: string; evidence: string[] };
+type RejectedLearningExample = { channelTitle: string; description: string | null; reviewNote: string | null; confidenceScore?: number; nicheRelevance?: number };
+function asRecord(value: unknown): Record<string, unknown> {
+ return typeof value === "object" && value !== null && !Array.isArray(value) ? value as Record<string, unknown> : {};
+}
+const assessmentRules = "You are a strict B2B technical creator research analyst for AIWithBh@i. The target audience is professional practitioners: AI Engineers, LLM Engineers, ML Engineers building production systems, AI Solution Architects, Enterprise/Solutions Architects designing AI products, AI Engineering Managers, technical leads, MLOps/LLMOps engineers and AI platform engineers. Discover channels that teach or demonstrate how to BUILD, DESIGN, INTEGRATE, DEPLOY, EVALUATE, SECURE and OPERATE real AI systems. Priority topics: production LLM applications, RAG pipelines and retrieval evaluation, agentic workflows and orchestration, enterprise copilots, AI product architecture, API/backend integration, vector databases, model serving and inference, GPU infrastructure, LLMOps/MLOps, monitoring/tracing/evaluation, guardrails, security/governance, latency/cost/reliability, cloud AI architecture and hands-on implementation. Also include deep technical developer coverage of AI models, APIs, frameworks and tools when it serves engineers building solutions. A channel can qualify through sustained depth in one or more of these areas; it need not cover everything. Judge actual sample video titles and descriptions plus channel description, not broad keywords or channel name. Require evidence of practical engineering, architecture decisions, code, implementation walkthroughs, system trade-offs, production deployment or technical analysis. Reject or strongly down-rank children's content, kids learning, cartoons, nursery rhymes, toy/unboxing, school homework channels, stock market, share market, trading, investing, crypto trading, finance tips, generic business/entrepreneurship, gaming, entertainment, general news, motivational content, generic coding with no AI systems relevance, shallow AI tool lists and AI hype without implementation. Do not mistake a channel for an AI engineering educator merely because it mentions AI, technology, software or business. Official vendor channels qualify only when supplied samples demonstrate relevant AI engineering, developer tools, architecture or implementation. Never infer fit from subscriber count or channel name alone. Score nicheRelevance against this professional AI engineering audience, not general technology interest. Provide confidenceScore 0-100, nicheRelevance 0-100, recommendation strong_candidate/possible_candidate/unlikely_match, concise reason and up to 3 specific evidence items. A candidate can pass when confidenceScore and nicheRelevance are both at least 50 and there is specific evidence of professional AI engineering relevance. Scores below 50 or no credible evidence must be rejected. recommendation may be strong_candidate or possible_candidate when the 40-point threshold is met; use unlikely_match below 40. Return ONLY JSON in this shape: {\"assessments\":[{\"channelId\":\"...\",\"confidenceScore\":0,\"nicheRelevance\":0,\"recommendation\":\"unlikely_match\",\"reason\":\"...\",\"evidence\":[\"...\"]}]}. Include every channelId exactly once.";
+function parseAssessments(raw: string, ids: string[]) {
+ const cleaned=raw.replace(/^```(?:json)?\s*/i,"").replace(/\s*```$/,"").trim();
+ const jsonText=cleaned.match(/\{[\s\S]*\}/)?.[0] ?? cleaned;
+ const parsed=JSON.parse(jsonText); const map=new Map<string,Assessment>();
+ for(const x of (Array.isArray(parsed.assessments)?parsed.assessments:[])) {
+  if(!ids.includes(x.channelId)||map.has(x.channelId)) continue;
+  const n=(v:unknown)=>Math.max(0,Math.min(100,Math.round(Number(v)||0)));
+  map.set(x.channelId,{channelId:x.channelId,confidenceScore:n(x.confidenceScore),nicheRelevance:n(x.nicheRelevance),recommendation:["strong_candidate","possible_candidate","unlikely_match"].includes(x.recommendation)?x.recommendation:"unlikely_match",reason:typeof x.reason==="string"?x.reason.slice(0,500):"No reason supplied.",evidence:Array.isArray(x.evidence)?x.evidence.filter((v:unknown)=>typeof v==="string").slice(0,3):[]});
+ }
+ return map;
+}
+async function screenDiscoveryChannels(channels: YouTubeChannel[], samples: Map<string,SampleVideo[]>, rejectedExamples: RejectedLearningExample[]) {
+ const config=getAIConfiguration();
+ if(!config.configured) throw new Error("Configure GEMINI_API_KEY or GROQ_API_KEY. Automatic screening is required; no unassessed channels will be saved.");
+ const limited=channels.slice(0,MAX_CHANNELS_PER_AI_SCREEN);
+ const combined=new Map<string,Assessment>();
+ let providerUsed="";
+ const chunks: YouTubeChannel[][]=[];
+ for(let i=0;i<limited.length;i+=AI_SCREEN_BATCH_SIZE) chunks.push(limited.slice(i,i+AI_SCREEN_BATCH_SIZE));
+
+ const callGemini=async(prompt:string,ids:string[])=>{
+  const model=process.env.GEMINI_MODEL||"gemini-3.5-flash-lite";
+  const res=await fetch("https://generativelanguage.googleapis.com/v1beta/interactions",{method:"POST",headers:{"Content-Type":"application/json","x-goog-api-key":process.env.GEMINI_API_KEY!},body:JSON.stringify({model,input:prompt,system_instruction:assessmentRules,response_format:{type:"text",mime_type:"application/json"},generation_config:{temperature:0.1,max_output_tokens:2048,thinking_level:"minimal"},store:false}),signal:AbortSignal.timeout(60000)});
+  const data=await res.json().catch(()=>({})); if(!res.ok) throw new Error(data?.error?.message||data?.message||"Gemini screening failed.");
+  const out=typeof data?.output_text==="string"?data.output_text:(Array.isArray(data?.steps)?data.steps.filter((s:{type?:string})=>s?.type==="model_output").flatMap((s:{content?:Array<{type?:string;text?:string}>})=>Array.isArray(s.content)?s.content:[]).filter((p:{type?:string;text?:string})=>p?.type==="text"&&typeof p.text==="string").map((p:{text:string})=>p.text).join("\\n"):"");
+  if(!out) throw new Error("Gemini Interactions API returned an empty screening result.");
+  const assessments=parseAssessments(out,ids);
+  if(ids.some(id=>!assessments.has(id))) throw new Error("Gemini returned incomplete channel assessments; retry discovery.");
+  return {assessments,provider:model};
+ };
+ const callGroq=async(prompt:string,ids:string[])=>{
+  const model=process.env.GROQ_MODEL||"llama-3.3-70b-versatile";
+  let res: Response;
+  let data: Record<string, unknown> = {};
+  for (let attempt = 0; attempt < 2; attempt++) {
+   const retryingWithoutJsonMode = attempt === 1;
+    res=await fetch("https://api.groq.com/openai/v1/chat/completions",{method:"POST",headers:{"Content-Type":"application/json",Authorization:"Bearer "+process.env.GROQ_API_KEY!},body:JSON.stringify({model,temperature:0.1,max_tokens:800,...(retryingWithoutJsonMode?{}:{response_format:{type:"json_object"}}),messages:[{role:"system",content:assessmentRules+" Output a valid JSON object only. No markdown or commentary."},{role:"user",content:prompt+"\nReturn exactly the assessments JSON shape requested in the system instruction."}]}),signal:AbortSignal.timeout(60000)});
+   data=asRecord(await res.json().catch(()=>({})));
+   if(res.ok) break;
+   const errorText=String(asRecord(data.error).message||"");
+   if(attempt===0 && res.status===400 && /failed_generation|failed to generate json/i.test(errorText)) continue;
+   if(res.status!==429 || attempt===1) {
+    const errorMessage=asRecord(data.error).message;
+    const error=new Error((typeof errorMessage==="string"?errorMessage:undefined)||"Groq screening failed ("+res.status+").") as Error & {status?:number;retryAfter?:string};
+    error.status=res.status; error.retryAfter=res.headers.get("retry-after")||undefined; throw error;
+   }
+   const retryAfter=Number(res.headers.get("retry-after")||"10");
+   const delay=Number.isFinite(retryAfter)&&retryAfter>0?Math.min(retryAfter,30):10;
+   await new Promise(resolve=>setTimeout(resolve,delay*1000));
+  }
+  const choices: unknown[]=Array.isArray(data.choices)?data.choices:[];
+  const content=asRecord(asRecord(choices[0]).message).content;
+  if(typeof content!=="string"||!content) throw new Error("Groq returned an empty screening result.");
+  const assessments=parseAssessments(content,ids);
+  if(ids.some(id=>!assessments.has(id))) throw new Error("Groq returned incomplete channel assessments; retry discovery.");
+  return {assessments,provider:model};
+ };
+
+ for(const chunk of chunks) {
+  const ids=chunk.map(c=>c.id);
+  const content=chunk.map(c=>JSON.stringify({
+   channelId:c.id,
+   title:(c.snippet?.title??"").slice(0,160),
+   description:(c.snippet?.description??"").slice(0,500),
+   sampleVideos:(samples.get(c.id)??[]).slice(0,3).map(v=>({
+    title:v.title.slice(0,140),
+    description:v.description.slice(0,180),
+    matchedQuery:v.matchedQuery.slice(0,60)
+   }))
+  })).join("\n");
+  const learningContext = rejectedExamples.length ? "\n\nUSER-REJECTED EXAMPLES FROM PREVIOUS REVIEWS (learn the exclusion patterns):\n" + JSON.stringify(rejectedExamples) + "\nUse these as negative examples. Identify recurring traits that explain why they do not fit AI tools/technology coverage or practical AI system design education. Apply those traits to new candidates only when supported by evidence. Do not reject a candidate merely because it shares a company, tool, or broad topic; judge actual content. Exact previously rejected channel IDs are excluded before screening." : "";
+  const prompt="Assess these "+chunk.length+" channels using only the compact public metadata below. Return every supplied channelId exactly once. Keep each reason under 20 words and evidence to at most 1 short item. Be consistent with the prior user rejection examples when relevant.\n"+content+learningContext;
+  let result:{assessments:Map<string,Assessment>;provider:string};
+  try {
+   if(config.available.includes("gemini")) result=await callGemini(prompt,ids);
+   else result=await callGroq(prompt,ids);
+  } catch(firstError) {
+   const fallback=config.available.includes("gemini")?"groq":"gemini";
+   if(!config.available.includes(fallback)) throw firstError;
+   // Gemini is preferred for discovery; Groq is a fallback only when Gemini is unavailable or fails.
+   result=fallback==="groq"?await callGroq(prompt,ids):await callGemini(prompt,ids);
+  }
+  providerUsed=result.provider;
+  for(const [id,assessment] of result.assessments) combined.set(id,assessment);
+ }
+ return {assessments:combined,provider:providerUsed};
+}
 
 async function reserveQuota(supabase: Awaited<ReturnType<typeof createSupabaseServerClient>>, bucket: "search" | "general") {
   if (!supabase) throw new Error("Supabase is not configured.");
@@ -56,31 +154,59 @@ export async function POST(request: NextRequest) {
   if (authError || !user) return NextResponse.json({ error: "Unauthorized." }, { status: 401 });
   if (!process.env.YOUTUBE_API_KEY) return NextResponse.json({ error: "YOUTUBE_API_KEY is not configured on the server." }, { status: 503 });
 
-  let body: { keywords?: unknown; language?: unknown };
+  let body: { keywords?: unknown; language?: unknown; mode?: unknown };
   try { body = await request.json(); } catch { return NextResponse.json({ error: "Request body must be valid JSON." }, { status: 400 }); }
   const language = body.language === "en" ? "en" : body.language === "hi" ? "hi" : null;
   const keywords = Array.isArray(body.keywords)
     ? [...new Set(body.keywords.filter((item): item is string => typeof item === "string").map((item) => item.trim()).filter(Boolean))]
     : [];
-  if (!language || keywords.length === 0 || keywords.length > MAX_KEYWORDS || keywords.some((keyword) => keyword.length > 80)) {
-    return NextResponse.json({ error: `Provide language "hi" or "en" and between 1 and ${MAX_KEYWORDS} keywords (maximum 80 characters each).` }, { status: 400 });
+  const mode = body.mode === "scan" ? "scan" : body.mode === "discover" ? "discover" : null;
+  if (!mode) return NextResponse.json({ error: "Choose discovery mode: discover or scan." }, { status: 400 });
+  if (!language || keywords.length === 0 || keywords.some((keyword) => keyword.length > 80)) {
+    return NextResponse.json({ error: `Provide language "hi" or "en" and at least one keyword (maximum 80 characters each).` }, { status: 400 });
   }
+
+  // YouTube search.list costs 100 quota units per request.
+  // Long exact phrases plus date/medium filters were too restrictive and returned
+  // zero candidates. Build six short, broad technical searches; relevance-ranked
+  // results include both tutorials and implementation case studies.
+  const MAX_SEARCH_REQUESTS = 6;
+  const excludedSearchTerms = [
+    "-kids", "-cartoon", "-nursery", "-rhymes", '-"stock market"', '-"share market"',
+    "-trading", "-nifty", "-sensex", '-"investment tips"'
+  ].join(" ");
+  const nicheSearchGroups = [
+    '"AI engineering"|"LLM engineering"|"AI engineer"',
+    '"RAG"|"retrieval augmented generation"|"vector database"',
+    '"AI agents"|"agentic AI"|"LangGraph"|"LLM agents"',
+    '"LLMOps"|"MLOps"|"LLM deployment"|"model serving"',
+    '"AI system design"|"AI architecture"|"enterprise AI"',
+    '"LLM application"|"AI API integration"|"production LLM"'
+  ];
+  // Preserve user-provided keywords as additional context, but do not require
+  // exact long phrases for discovery. The curated groups keep search broad.
+  const userTerms = keywords
+    .map((keyword) => keyword.replace(/["|]/g, " ").replace(/\s+/g, " ").trim())
+    .filter(Boolean);
+  const searchQueries = nicheSearchGroups.map((group, index) => {
+    const extra = userTerms[index] ? ' "' + userTerms[index].slice(0, 55) + '"' : "";
+    return (group + extra + " " + excludedSearchTerms).slice(0, 450);
+  });
 
   const { count, error: countError } = await supabase.from("competitors").select("id", { count: "exact", head: true }).eq("owner_id", user.id).eq("is_active", true);
   if (countError) return NextResponse.json({ error: "Could not check your active competitor limit." }, { status: 500 });
-  const remaining = Math.max(0, MAX_ACTIVE_COMPETITORS - (count ?? 0));
-  if (remaining === 0) return NextResponse.json({ error: "You already have 100 active competitors. Deactivate one before discovering more.", activeLimit: MAX_ACTIVE_COMPETITORS }, { status: 409 });
 
   try {
     const samplesByChannel = new Map<string, SampleVideo[]>();
     const channelIds = new Set<string>();
 
     // Search for videos that indicate the desired format, not channels merely discussing AI.
-    for (const keyword of keywords) {
+    // OR-grouping preserves keyword coverage while limiting discovery to six search requests.
+    for (const searchQuery of searchQueries.slice(0, MAX_SEARCH_REQUESTS)) {
       const reservation = await reserveQuota(supabase, "search");
       if (!reservation.allowed) return NextResponse.json({ error: "Daily YouTube search request limit reached.", quota: reservation }, { status: 429 });
       const search = await youtubeGet<{ items?: Array<{ id?: { videoId?: string }; snippet?: { channelId?: string; title?: string; description?: string; channelTitle?: string; publishedAt?: string; thumbnails?: { medium?: { url?: string }; default?: { url?: string } } } }> }>("search", {
-        part: "snippet", type: "video", maxResults: "25", q: keyword, relevanceLanguage: language, order: "relevance", videoDuration: "medium",
+        part: "snippet", type: "video", maxResults: "50", q: searchQuery, relevanceLanguage: language, order: "relevance",
       });
       for (const item of search.items ?? []) {
         const channelId = item.snippet?.channelId;
@@ -94,7 +220,7 @@ export async function POST(request: NextRequest) {
           channelTitle: item.snippet?.channelTitle ?? "",
           publishedAt: item.snippet?.publishedAt ?? null,
           thumbnailUrl: item.snippet?.thumbnails?.medium?.url ?? item.snippet?.thumbnails?.default?.url ?? null,
-          matchedQuery: keyword,
+          matchedQuery: searchQuery,
           videoUrl: videoId ? `https://www.youtube.com/watch?v=${videoId}` : null,
         };
         const list = samplesByChannel.get(channelId) ?? [];
@@ -114,74 +240,148 @@ export async function POST(request: NextRequest) {
       channels.push(...(result.items ?? []));
     }
 
-    const eligible = channels
-      .filter((channel) => channel.id && channel.snippet?.title)
-      .sort((a, b) => Number(b.statistics?.subscriberCount ?? 0) - Number(a.statistics?.subscriberCount ?? 0));
+    // Load the user's prior rejected decisions as persistent negative feedback.
+    const { data: rejectedRows, error: rejectedError } = await supabase.from("competitors")
+      .select("youtube_channel_id,channel_title,description,ai_production_review_note,ai_production_evidence")
+      .eq("owner_id", user.id).eq("ai_production_status", "rejected")
+      .order("ai_production_reviewed_at", { ascending: false }).limit(30);
+    if (rejectedError) return NextResponse.json({ error: "Could not load prior rejection feedback.", details: rejectedError.message }, { status: 500 });
 
-    const rows = eligible.slice(0, remaining).map((channel) => ({
-      owner_id: user.id,
-      youtube_channel_id: channel.id,
-      channel_title: channel.snippet?.title ?? "Untitled channel",
-      channel_url: channel.snippet?.customUrl ? `https://www.youtube.com/@${channel.snippet.customUrl.replace(/^@/, "")}` : `https://www.youtube.com/channel/${channel.id}`,
-      description: channel.snippet?.description ?? null,
-      published_at: channel.snippet?.publishedAt ?? null,
-      country: channel.snippet?.country ?? null,
-      language,
-      subscriber_count: channel.statistics?.subscriberCount ?? null,
-      video_count: channel.statistics?.videoCount ?? null,
-      view_count: channel.statistics?.viewCount ?? null,
-      is_active: false,
-      ai_production_status: "needs_review",
-      ai_production_evidence: {
-        reviewStatus: "unverified",
-        explanation: "Found through video-level searches targeting faceless/AI-style industrial production. This is a candidate signal, not proof of AI voiceover or AI-generated visuals.",
-        sampleVideos: samplesByChannel.get(channel.id) ?? [],
+    const rejectedIds = new Set((rejectedRows ?? []).map((row) => row.youtube_channel_id));
+    const rejectedExamples: RejectedLearningExample[] = (rejectedRows ?? []).slice(0, 4).map((row) => {
+      const evidence = row.ai_production_evidence && typeof row.ai_production_evidence === "object"
+        ? row.ai_production_evidence as Record<string, unknown> : {};
+      return {
+        channelTitle: row.channel_title.slice(0, 80),
+        description: typeof row.description === "string" ? row.description.slice(0, 100) : null,
+        reviewNote: typeof row.ai_production_review_note === "string" ? row.ai_production_review_note.slice(0, 80) : null,
+        confidenceScore: typeof evidence.confidenceScore === "number" ? evidence.confidenceScore : undefined,
+        nicheRelevance: typeof evidence.nicheRelevance === "number" ? evidence.nicheRelevance : undefined,
+      };
+    });
+
+    // Manually reviewed channels are already approved; never spend AI screening calls on them.
+    const { data: manualPriorityRows, error: manualPriorityError } = await supabase.from("competitors")
+      .select("youtube_channel_id").eq("owner_id", user.id).eq("is_manual_priority", true);
+    if (manualPriorityError) return NextResponse.json({ error: "Could not load manual priority channels.", details: manualPriorityError.message }, { status: 500 });
+    const manualPriorityIds = new Set((manualPriorityRows ?? []).map((row) => row.youtube_channel_id));
+
+    // Exclude channels whose own identity clearly belongs to a disallowed vertical.
+    // A single off-topic sample is not enough to reject a mixed-topic creator.
+    const hardExcludedTopic = /\b(?:kids?|children|childrens|nursery|cartoons?|toy unboxing|toy reviews?|preschool|baby songs?|बालगीत|बच्चों|बच्चो|stock market|share market|stock trading|share trading|trading|day trading|intraday|nifty|sensex|options trading|crypto trading|investing|investment tips|stock tips|शेयर बाजार|शेयर मार्केट|स्टॉक मार्केट|ट्रेडिंग)\b/i;
+    const topicExcludedIds = new Set(channels.filter((channel) =>
+      hardExcludedTopic.test((channel.snippet?.title ?? "") + " " + (channel.snippet?.description ?? ""))
+    ).map((channel) => channel.id));
+    const candidates = channels
+      .filter((channel) => channel.id && channel.snippet?.title && !rejectedIds.has(channel.id) && !manualPriorityIds.has(channel.id) && !topicExcludedIds.has(channel.id))
+      .sort((a, b) => (samplesByChannel.get(b.id)?.length ?? 0) - (samplesByChannel.get(a.id)?.length ?? 0));
+    const { assessments, provider: screeningProvider } = await screenDiscoveryChannels(candidates, samplesByChannel, rejectedExamples);
+    const eligible = candidates.filter((channel) => {
+      const assessment = assessments.get(channel.id);
+      return Boolean(assessment && assessment.confidenceScore >= MIN_DISCOVERY_SCORE && assessment.nicheRelevance >= MIN_DISCOVERY_SCORE && assessment.recommendation !== "unlikely_match");
+    });
+
+    // Snapshot prior automatic rows. Scan mode removes stale automatic rows
+    // only after the replacement candidate batch has been saved successfully.
+    const { data: priorAutomaticRows, error: priorAutomaticError } = mode === "scan"
+      ? await supabase.from("competitors").select("id,youtube_channel_id")
+          .eq("owner_id", user.id).eq("is_manual_priority", false)
+      : { data: [], error: null };
+    if (priorAutomaticError) return NextResponse.json({ error: "Could not prepare a safe fresh scan.", details: priorAutomaticError.message }, { status: 500 });
+    let removedAutomaticChannels = 0;
+
+    const discoveredIds = candidates.map((channel) => channel.id);
+    const { data: existingRows, error: existingError } = discoveredIds.length
+      ? await supabase.from("competitors").select("id,youtube_channel_id,ai_production_status,ai_production_evidence,is_active,user_tracking_preference,discovery_count").eq("owner_id", user.id).in("youtube_channel_id", discoveredIds)
+      : { data: [], error: null };
+    if (existingError) return NextResponse.json({ error: "Could not load saved channel decisions.", details: existingError.message }, { status: 500 });
+    const existingById = new Map((existingRows ?? []).map((row) => [row.youtube_channel_id, row]));
+    const discoveredAt = new Date().toISOString();
+    const rows = candidates.map((channel) => {
+      const assessment = assessments.get(channel.id);
+      const existing = existingById.get(channel.id);
+      const passed = Boolean(assessment && assessment.confidenceScore >= MIN_DISCOVERY_SCORE && assessment.nicheRelevance >= MIN_DISCOVERY_SCORE && assessment.recommendation !== "unlikely_match");
+      const oldEvidence = existing?.ai_production_evidence && typeof existing.ai_production_evidence === "object" ? existing.ai_production_evidence as Record<string, unknown> : {};
+      const evidence = assessment ? {
+        ...oldEvidence, reviewStatus: passed ? "ai_screened_high_confidence" : "ai_filtered",
+        explanation: assessment.reason, confidenceScore: assessment.confidenceScore,
+        nicheRelevance: assessment.nicheRelevance, recommendation: assessment.recommendation,
+        evidence: assessment.evidence, screeningProvider, screenedAt: discoveredAt,
+        sampleVideos: samplesByChannel.get(channel.id) ?? oldEvidence.sampleVideos ?? [],
         requiresHumanVerification: true,
-      },
-      last_checked_at: new Date().toISOString(),
-    }));
-
+      } : { ...oldEvidence, sampleVideos: samplesByChannel.get(channel.id) ?? oldEvidence.sampleVideos ?? [] };
+      return {
+        owner_id: user.id, youtube_channel_id: channel.id,
+        channel_title: channel.snippet?.title ?? "Untitled channel",
+        channel_url: channel.snippet?.customUrl ? `https://www.youtube.com/@${channel.snippet.customUrl.replace(/^@/, "")}` : `https://www.youtube.com/channel/${channel.id}`,
+        description: channel.snippet?.description ?? null, published_at: channel.snippet?.publishedAt ?? null,
+        country: channel.snippet?.country ?? null, language,
+        subscriber_count: channel.statistics?.subscriberCount ?? null,
+        video_count: channel.statistics?.videoCount ?? null, view_count: channel.statistics?.viewCount ?? null,
+        // Preserve all existing manual decisions and active state.
+        is_active: existing?.is_active ?? false,
+        user_tracking_preference: existing?.user_tracking_preference ?? false,
+        ai_production_status: existing?.ai_production_status ?? "needs_review",
+        ai_production_evidence: evidence,
+        discovery_count: (existing?.discovery_count ?? 0) + 1,
+        last_discovered_at: discoveredAt,
+        discovery_eligibility: assessment ? (passed ? "eligible" : "filtered") : "pending_screen",
+        discovery_reason: assessment?.reason ?? "Not screened in this run.",
+        discovery_score: assessment ? Math.min(assessment.confidenceScore, assessment.nicheRelevance) : null,
+        last_checked_at: discoveredAt,
+      };
+    });
     let saved = 0;
     if (rows.length) {
-      const { data, error } = await supabase.from("competitors")
-        .upsert(rows, { onConflict: "owner_id,youtube_channel_id", ignoreDuplicates: true }).select("id");
-      if (error) return NextResponse.json({ error: "YouTube search succeeded, but saving competitors failed.", details: error.message }, { status: 500 });
+      const { data, error } = await supabase.from("competitors").upsert(rows, { onConflict: "owner_id,youtube_channel_id" }).select("id");
+      if (error) return NextResponse.json({ error: "YouTube search succeeded, but saving discovered channels failed.", details: error.message }, { status: 500 });
       saved = data?.length ?? 0;
     }
 
-    // Refresh sample-video evidence for channels that were already saved.
-    // The original upsert intentionally ignores duplicates so it cannot reset
-    // a user's manual qualification/rejection decision.
-    const eligibleIds = eligible.map((channel) => channel.id);
-    if (eligibleIds.length) {
-      const { data: existingRows, error: existingError } = await supabase.from("competitors")
-        .select("id,youtube_channel_id,ai_production_evidence")
-        .eq("owner_id", user.id).in("youtube_channel_id", eligibleIds);
-      if (existingError) return NextResponse.json({ error: "Channels were discovered, but sample-video evidence could not be refreshed.", details: existingError.message }, { status: 500 });
-      for (const row of existingRows ?? []) {
-        const newSamples = samplesByChannel.get(row.youtube_channel_id) ?? [];
-        if (!newSamples.length) continue;
-        const oldEvidence = row.ai_production_evidence && typeof row.ai_production_evidence === "object"
-          ? row.ai_production_evidence as Record<string, unknown> : {};
-        const mergedEvidence = {
-          ...oldEvidence,
-          sampleVideos: newSamples,
-          sampleVideosRefreshedAt: new Date().toISOString(),
-          requiresHumanVerification: true,
-        };
-        const { error: evidenceError } = await supabase.from("competitors")
-          .update({ ai_production_evidence: mergedEvidence })
-          .eq("id", row.id).eq("owner_id", user.id);
-        if (evidenceError) return NextResponse.json({ error: "Could not update sample-video evidence for an existing channel.", details: evidenceError.message }, { status: 500 });
+    // Safety gate: never delete the existing discovery list when YouTube
+    // returns no channels, AI finds no qualifying niche matches, or nothing is saved.
+    // A fresh scan is considered successful only when at least one 50+/100 match
+    // has been screened and persisted.
+    const safeToReplaceAutomaticRows =
+      mode === "scan" &&
+      channelIds.size > 0 &&
+      eligible.length > 0 &&
+      saved > 0;
+
+    if (safeToReplaceAutomaticRows) {
+      const keepIds = new Set(eligible.map((channel) => channel.id));
+      const staleIds = (priorAutomaticRows ?? [])
+        .filter((row) => !keepIds.has(row.youtube_channel_id))
+        .map((row) => row.id);
+      for (let index = 0; index < staleIds.length; index += 100) {
+        const batch = staleIds.slice(index, index + 100);
+        const { data: removed, error: clearError } = await supabase.from("competitors")
+          .delete().eq("owner_id", user.id).eq("is_manual_priority", false).in("id", batch).select("id");
+        if (clearError) return NextResponse.json({ error: "New matching channels were saved, but old automatically discovered channels could not be fully cleared.", details: clearError.message, saved, removedAutomaticChannels }, { status: 500 });
+        removedAutomaticChannels += removed?.length ?? 0;
       }
     }
 
     const { data: quota } = await supabase.rpc("get_youtube_quota_status");
     return NextResponse.json({
-      searchedKeywords: keywords, language, channelsDiscovered: channelIds.size,
-      channelsWithinAgeRange: eligible.length, saved, candidatesSaved: saved, sampleEvidenceRefreshed: eligible.slice(0, remaining).filter((channel) => (samplesByChannel.get(channel.id)?.length ?? 0) > 0).length, activeCompetitorCount: count ?? 0,
+      searchedKeywords: keywords, searchQueriesUsed: searchQueries, youtubeSearchRequests: searchQueries.length, language, channelsDiscovered: channelIds.size, searchResultsCollected: [...samplesByChannel.values()].reduce((total, samples) => total + samples.length, 0),
+      channelsAIassessed: assessments.size,
+      channelsExcludedByTopic: topicExcludedIds.size,
+      manuallyApprovedChannelsSkipped: manualPriorityIds.size,
+      priorRejectedExamplesUsed: rejectedExamples.length,
+      previouslyRejectedChannelsSkipped: rejectedIds.size,
+      channelsPassingConfidenceThreshold: eligible.length,
+      channelsFilteredByAI: candidates.filter((channel) => assessments.has(channel.id) && !eligible.includes(channel)).length,
+      channelsPendingScreening: candidates.filter((channel) => !assessments.has(channel.id)).length,
+      mode, removedAutomaticChannels, automaticRowsReplaced: safeToReplaceAutomaticRows, scanPreservedReason: mode === "scan" && !safeToReplaceAutomaticRows ? (channelIds.size === 0 ? "YouTube returned zero channels." : eligible.length === 0 ? "No channels passed the 50/100 confidence and niche relevance thresholds." : "No matching channel records were saved.") : null,
+      minimumConfidenceScore: MIN_DISCOVERY_SCORE,
+      minimumNicheRelevance: MIN_DISCOVERY_SCORE,
+      screeningProvider,
+      channelsWithinAgeRange: eligible.length, saved, candidatesSaved: saved, sampleEvidenceRefreshed: candidates.filter((channel) => (samplesByChannel.get(channel.id)?.length ?? 0) > 0).length, activeCompetitorCount: count ?? 0,
       activeCompetitorLimit: MAX_ACTIVE_COMPETITORS, ageFilter: "No channel-age restriction; global discovery.",
-      qualification: "Candidates only. Public YouTube metadata cannot verify AI voiceovers or AI-generated visuals. Review the sample videos before marking a channel as AI-produced.",
+      screeningLimitPerRun: MAX_CHANNELS_PER_AI_SCREEN,
+      screeningBatchSize: AI_SCREEN_BATCH_SIZE,
+      qualification: "Discovery targets professional AI engineers, LLM engineers, AI/solutions architects, AI engineering managers and production AI platform teams. Children/entertainment and finance/trading verticals are excluded by search terms and channel metadata; only strong evidence-backed technical matches pass AI screening. AI-production style still requires human verification.",
       quotaNote: "This dashboard tracks requests made through this app only. Other apps using the same Google Cloud project also consume its quota.",
       quota: quota ?? null,
     });

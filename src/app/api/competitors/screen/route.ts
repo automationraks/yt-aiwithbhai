@@ -31,9 +31,21 @@ async function fetchRecentChannelSamples(supabase: NonNullable<Awaited<ReturnTyp
   playlistUrl.searchParams.set("maxResults", "5");
   playlistUrl.searchParams.set("key", apiKey);
   const playlistResponse = await fetch(playlistUrl, { cache: "no-store", signal: AbortSignal.timeout(15000) });
-  const playlistPayload = await playlistResponse.json().catch(() => ({}));
-  if (!playlistResponse.ok) throw new Error(playlistPayload?.error?.message || "Could not load recent channel videos.");
-  return (playlistPayload?.items ?? []).map((item: any) => {
+  type PlaylistItem = {
+    contentDetails?: { videoId?: string; videoPublishedAt?: string };
+    snippet?: {
+      resourceId?: { videoId?: string };
+      title?: string;
+      description?: string;
+      channelTitle?: string;
+      publishedAt?: string;
+      thumbnails?: { medium?: { url?: string }; default?: { url?: string } };
+    };
+  };
+  const playlistPayload: { error?: { message?: string }; items?: PlaylistItem[] } =
+    await playlistResponse.json().catch(() => ({}));
+  if (!playlistResponse.ok) throw new Error(playlistPayload.error?.message || "Could not load recent channel videos.");
+  return (playlistPayload.items ?? []).map((item) => {
     const videoId = item.contentDetails?.videoId ?? item.snippet?.resourceId?.videoId;
     return {
       videoId,
@@ -72,7 +84,7 @@ Do NOT confuse creators who merely discuss AI news, AI tools, generic prompt tip
 
 Return ONLY JSON with this exact structure:
 {
- "industrialRelevance": 0,
+ "nicheFitScore": 0,
  "facelessFormatLikelihood": 0,
  "syntheticVisualStyleLikelihood": 0,
  "aiProductionDisclosure": "explicit" | "none_found" | "unclear",
@@ -82,7 +94,7 @@ Return ONLY JSON with this exact structure:
  "limitations": ["what cannot be verified"]
 }
 
-Use industrialRelevance as the legacy numeric field for AI-systems niche relevance (0-100): score relevance to the target technical education niche, not manufacturing. Use facelessFormatLikelihood as technical teaching format suitability and syntheticVisualStyleLikelihood as visual explainer/diagram suitability; neither is a requirement. A strong_candidate requires repeated evidence of substantive AI systems architecture and engineering education aimed at developers/IT professionals. Penalize generic AI news, tool roundups and nontechnical content. Include specific evidence and uncertainty.`;
+Use nicheFitScore (0-100) exclusively for relevance to the current AI systems architecture and engineering education niche. Do not score generic industrial manufacturing relevance. Use facelessFormatLikelihood as technical teaching format suitability and syntheticVisualStyleLikelihood as visual explainer/diagram suitability; neither is a requirement. A strong_candidate requires repeated evidence of substantive AI systems architecture and engineering education aimed at developers/IT professionals. Penalize generic AI news, tool roundups and nontechnical content. Include specific evidence and uncertainty.`;
 
 function parseResult(text: string) {
   const cleaned = text.replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/, "").trim();
@@ -92,7 +104,8 @@ function parseResult(text: string) {
   const narration = ["explicit_synthetic", "explicit_human", "unknown"].includes(value.narrationEvidence) ? value.narrationEvidence : "unknown";
   const recommendation = ["strong_candidate", "possible_candidate", "unlikely_match"].includes(value.recommendation) ? value.recommendation : "possible_candidate";
   return {
-    industrialRelevance: score(value.industrialRelevance),
+    nicheFitScore: score(value.nicheFitScore ?? value.industrialRelevance),
+    industrialRelevance: score(value.nicheFitScore ?? value.industrialRelevance),
     facelessFormatLikelihood: score(value.facelessFormatLikelihood),
     syntheticVisualStyleLikelihood: score(value.syntheticVisualStyleLikelihood),
     aiProductionDisclosure: disclosure,
@@ -105,20 +118,37 @@ function parseResult(text: string) {
 
 async function runGemini(prompt: string, images: ImagePart[]) {
   const key = process.env.GEMINI_API_KEY!;
-  const model = process.env.GEMINI_MODEL || "gemini-2.5-flash-lite";
-  const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`, {
-    method: "POST", headers: { "Content-Type": "application/json", "x-goog-api-key": key },
+  const model = process.env.GEMINI_MODEL || "gemini-3.5-flash-lite";
+  const input = [
+    { type: "text", text: prompt },
+    ...images.map((image) => ({
+      type: "image",
+      data: image.inlineData.data,
+      mime_type: image.inlineData.mimeType,
+    })),
+  ];
+  const response = await fetch("https://generativelanguage.googleapis.com/v1beta/interactions", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", "x-goog-api-key": key },
     body: JSON.stringify({
-      systemInstruction: { parts: [{ text: instruction }] },
-      contents: [{ role: "user", parts: [{ text: prompt }, ...images] }],
-      generationConfig: { responseMimeType: "application/json", temperature: 0.1, maxOutputTokens: 1200 },
+      model,
+      input,
+      system_instruction: instruction,
+      response_format: { type: "text", mime_type: "application/json" },
+      generation_config: { temperature: 0.1, max_output_tokens: 1200, thinking_level: "minimal" },
+      store: false,
     }),
     signal: AbortSignal.timeout(30000),
   });
   const payload = await response.json().catch(() => ({}));
-  if (!response.ok) throw new Error(payload?.error?.message || `Gemini request failed (${response.status}).`);
-  const output = payload?.candidates?.[0]?.content?.parts?.map((part: { text?: string }) => part.text ?? "").join("");
-  if (!output) throw new Error("Gemini returned an empty screening result.");
+  if (!response.ok) throw new Error(payload?.error?.message || payload?.message || `Gemini Interactions request failed (${response.status}).`);
+  const output = Array.isArray(payload?.steps)
+    ? payload.steps.filter((step: { type?: string }) => step?.type === "model_output")
+      .flatMap((step: { content?: Array<{ type?: string; text?: string }> }) => Array.isArray(step.content) ? step.content : [])
+      .filter((part: { type?: string; text?: string }) => part?.type === "text" && typeof part.text === "string")
+      .map((part: { text: string }) => part.text).join("\\n")
+    : "";
+  if (!output) throw new Error("Gemini Interactions API returned an empty screening result.");
   return parseResult(output);
 }
 
@@ -200,11 +230,11 @@ export async function POST(request: NextRequest) {
   const preferred = config.primary;
   try {
     if (preferred === "gemini" && config.available.includes("gemini")) {
-      result = await runGemini(prompt, images); provider = process.env.GEMINI_MODEL || "gemini-2.5-flash-lite";
+      result = await runGemini(prompt, images); provider = process.env.GEMINI_MODEL || "gemini-3.5-flash-lite";
     } else if (preferred === "groq" && config.available.includes("groq")) {
       result = await runGroq(prompt); provider = process.env.GROQ_MODEL || "openai/gpt-oss-120b";
     } else if (config.available.includes("gemini")) {
-      result = await runGemini(prompt, images); provider = process.env.GEMINI_MODEL || "gemini-2.5-flash-lite";
+      result = await runGemini(prompt, images); provider = process.env.GEMINI_MODEL || "gemini-3.5-flash-lite";
     } else {
       result = await runGroq(prompt); provider = process.env.GROQ_MODEL || "openai/gpt-oss-120b";
     }
@@ -213,11 +243,11 @@ export async function POST(request: NextRequest) {
     if (!config.available.includes(fallback)) throw primaryError;
     fallbackNote = primaryError instanceof Error ? primaryError.message.slice(0, 300) : "Primary provider failed.";
     if (fallback === "groq") { result = await runGroq(prompt); provider = process.env.GROQ_MODEL || "openai/gpt-oss-120b"; imagesUsed = 0; }
-    else { result = await runGemini(prompt, images); provider = process.env.GEMINI_MODEL || "gemini-2.5-flash-lite"; }
+    else { result = await runGemini(prompt, images); provider = process.env.GEMINI_MODEL || "gemini-3.5-flash-lite"; }
   }
 
   const aiScreening = {
-    ...result, provider, screenedAt: new Date().toISOString(), imagesAnalyzed: imagesUsed,
+    ...result, nicheVersion: "aiwithbhai-ai-systems-v1", provider, screenedAt: new Date().toISOString(), imagesAnalyzed: imagesUsed,
     sampleVideosAnalyzed: Math.min(samples.length, 5),
     status: "advisory_only",
     narrationVerification: result.narrationEvidence === "unknown" ? "Not verified; no audio/transcript was supplied." : "Based on explicit public creator disclosure, not direct audio verification.",

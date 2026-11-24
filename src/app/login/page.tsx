@@ -1,10 +1,10 @@
 "use client";
 
-import { FormEvent, useState } from "react";
+import { FormEvent, Suspense, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { createSupabaseBrowserClient } from "@/lib/supabase/browser";
 
-export default function LoginPage() {
+function LoginForm() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const [email, setEmail] = useState("");
@@ -87,5 +87,14 @@ export default function LoginPage() {
         <p className="mt-6 text-center text-xs text-slate-500">Private access · Supabase authentication</p>
       </section>
     </main>
+  );
+}
+
+
+export default function LoginPage() {
+  return (
+    <Suspense fallback={<main className="flex min-h-screen items-center justify-center bg-[#090d14] px-4 text-sm text-slate-400">Loading sign-in...</main>}>
+      <LoginForm />
+    </Suspense>
   );
 }
