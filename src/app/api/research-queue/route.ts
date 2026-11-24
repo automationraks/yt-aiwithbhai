@@ -41,8 +41,11 @@ export async function GET() {
     return NextResponse.json({ error: "Could not count shortlisted channels.", details: countError.message }, { status: 503 });
   }
 
-  const selectedAt = data?.selected_at ? new Date(data.selected_at) : null;
-  const nextRefreshAt = selectedAt ? new Date(selectedAt.getTime() + 10 * 60 * 1000).toISOString() : null;
+  const now = new Date();
+  const nextRefresh = new Date(now);
+  nextRefresh.setSeconds(0, 0);
+  nextRefresh.setMinutes(Math.ceil((now.getMinutes() + 1) / 10) * 10);
+  const nextRefreshAt = nextRefresh.toISOString();
 
   return NextResponse.json({
     mode: "cloud",
