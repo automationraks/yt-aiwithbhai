@@ -51,7 +51,21 @@ async function graph(path: string, params: Record<string, string>) {
     );
   }
 
-  let data: {
+  type MetaGraphResponse = {
+    access_token?: string;
+    token_type?: string;
+    expires_in?: number;
+    data?: Array<{
+      permission?: string;
+      status?: string;
+      id?: string;
+      name?: string;
+      access_token?: string;
+      instagram_business_account?: {
+        id?: string;
+        username?: string;
+      };
+    }>;
     error?: {
       message?: string;
       type?: string;
@@ -59,7 +73,9 @@ async function graph(path: string, params: Record<string, string>) {
       error_subcode?: number;
       fbtrace_id?: string;
     };
-  } = {};
+  };
+
+  let data: MetaGraphResponse = {};
 
   try {
     data = await response.json() as typeof data;
@@ -149,22 +165,31 @@ export async function GET(req: NextRequest) {
       redirect_uri: redirectUri,
       code,
     });
+    if (!shortLived.access_token) {
+      throw new Error("Meta did not return a short-lived access token.");
+    }
 
     const longLived = await graph("oauth/access_token", {
       grant_type: "fb_exchange_token",
       client_id: appId,
       client_secret: appSecret,
-      fb_exchange_token: String(shortLived.access_token),
+      fb_exchange_token: shortLived.access_token,
     });
+    if (!longLived.access_token) {
+      throw new Error("Meta did not return a long-lived access token.");
+    }
 
-    const accessToken = String(longLived.access_token);
+    const accessToken = longLived.access_token;
 
     // Persist the permissions Meta actually granted, rather than assuming
     // every permission selected in the login configuration was approved.
     const permissionResult = await graph("me/permissions", { access_token: accessToken });
     const grantedScopes = (permissionResult.data ?? [])
-      .filter((permission: { status?: string }) => permission.status === "granted")
-      .map((permission: { permission: string }) => permission.permission);
+      .filter(
+        (permission): permission is typeof permission & { permission: string } =>
+          permission.status === "granted" && typeof permission.permission === "string",
+      )
+      .map((permission) => permission.permission);
 
     const pages = await graph("me/accounts", {
       fields: "id,name,access_token,instagram_business_account{id,username}",
@@ -172,14 +197,17 @@ export async function GET(req: NextRequest) {
     });
 
     const page = (pages.data ?? []).find(
-      (candidate: { instagram_business_account?: { id?: string; username?: string } }) =>
+      (candidate) =>
         candidate.instagram_business_account?.id && candidate.instagram_business_account?.username,
     );
 
-    if (!page) {
+    if (!page?.instagram_business_account?.id || !page.instagram_business_account.username) {
       throw new Error(
         "No linked Instagram Business or Creator account was returned. Confirm that the Facebook user has access to the Page and that the Instagram professional account is linked to it.",
       );
+    }
+    if (!page.access_token) {
+      throw new Error("Meta did not return a Page access token for the linked Instagram account.");
     }
 
     const instagramAccount = page.instagram_business_account;
