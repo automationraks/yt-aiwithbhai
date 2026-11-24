@@ -1,0 +1,1 @@
+{"name":"aiwithbhai-local-render-worker","version":"1.0.0","private":true,"type":"module","scripts":{"start":"node src/server.js","check":"node --check src/server.js && node --check src/renderer.js && node --check src/tts.js"},"dependencies":{"@supabase/supabase-js":"^2.57.0","dotenv":"^16.4.7","sharp":"^0.34.3"}}
