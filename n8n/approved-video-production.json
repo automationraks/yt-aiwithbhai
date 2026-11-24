@@ -1,0 +1,130 @@
+{
+  "name": "AIWithBh@i - Approved Video Production Queue",
+  "nodes": [
+    {
+      "id": "video-webhook",
+      "name": "Approved video webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [
+        240,
+        300
+      ],
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "aiwithbhai-approved-video",
+        "authentication": "headerAuth",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "credentials": {
+        "httpHeaderAuth": {
+          "name": "AIWithBh@i Webhook Secret"
+        }
+      }
+    },
+    {
+      "id": "video-verify",
+      "name": "Verify approved script and timeline",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        500,
+        300
+      ],
+      "parameters": {
+        "jsCode": "const event = $json.body ?? $json;\nif (event.event !== 'content_approved') throw new Error('Unexpected event type.');\nconst idea = event.idea ?? {};\nif (!event.ownerId || !idea.id || !idea.approvedScript || !idea.approvedScriptHash) throw new Error('Missing owner, idea, approved script or hash.');\nconst digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(idea.approvedScript));\nconst hash = [...new Uint8Array(digest)].map(x => x.toString(16).padStart(2,'0')).join('');\nif (hash !== idea.approvedScriptHash) throw new Error('Approved script hash mismatch.');\nif (!Array.isArray(idea.segments) || !idea.segments.length) throw new Error('No video segments received.');\nconst segments = [...idea.segments].sort((a,b) => a.sequence-b.sequence);\nif (segments.some((s,i) => s.sequence !== i+1 || !s.outputStoragePath || !s.narration || !(Number(s.durationSeconds)>0 && Number(s.durationSeconds)<=7.01))) throw new Error('Segment list is missing, unordered or has invalid durations.');\nif (event.storage?.bucket !== 'generated-videos' || event.storage?.private !== true || event.storage?.finalPath !== event.ownerId + '/' + idea.id + '/final.mp4') throw new Error('Private storage path validation failed.');\nif (event.callback?.url !== 'https://YOUR-VERCEL-DOMAIN.vercel.app/api/video-production/complete') throw new Error('Set the callback URL in the application before activating this workflow.');\nreturn [{ json: { event, scriptHash: hash, segmentCount: segments.length } }];"
+      }
+    },
+    {
+      "id": "video-queue",
+      "name": "Queue for Windows render worker",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        800,
+        300
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "https://YOUR-VERCEL-DOMAIN.vercel.app/api/internal/video-production/queue",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "contentType": "raw",
+        "rawContentType": "application/json",
+        "body": "={{ JSON.stringify($json.event) }}",
+        "options": {
+          "timeout": 30000
+        }
+      },
+      "credentials": {
+        "httpHeaderAuth": {
+          "name": "AIWithBh@i Internal Webhook Bearer"
+        }
+      }
+    },
+    {
+      "id": "video-response",
+      "name": "Acknowledge queued job",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        1080,
+        300
+      ],
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ { ok: true, queued: true, job: $json } }}",
+        "options": {
+          "responseCode": 202
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Approved video webhook": {
+      "main": [
+        [
+          {
+            "node": "Verify approved script and timeline",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Verify approved script and timeline": {
+      "main": [
+        [
+          {
+            "node": "Queue for Windows render worker",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Queue for Windows render worker": {
+      "main": [
+        [
+          {
+            "node": "Acknowledge queued job",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "saveManualExecutions": true
+  },
+  "pinData": {},
+  "meta": {
+    "templateCredsSetupCompleted": false
+  },
+  "tags": []
+}
