@@ -1,5 +1,12 @@
 {
   "crons": [
-    { "path": "/api/cron/manual-channel-monitor", "schedule": "15 2 * * *" }
+    {
+      "path": "/api/cron/manual-channel-monitor",
+      "schedule": "15 2 * * *"
+    },
+    {
+      "path": "/api/cron/daily-content",
+      "schedule": "30 0 * * *"
+    }
   ]
 }
