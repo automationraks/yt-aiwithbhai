@@ -67,6 +67,7 @@ export default function CompetitorExplorerPage() {
   const [search, setSearch] = useState("");
   const [loading, setLoading] = useState(true);
   const [discovering, setDiscovering] = useState(false);
+  const [instagramScanning, setInstagramScanning] = useState(false);
   const [discoveryMode, setDiscoveryMode] = useState<"discover" | "scan" | null>(null);
   const discoveryInFlight = useRef(false);
   const [updatingId, setUpdatingId] = useState<string | null>(null);
@@ -142,6 +143,25 @@ export default function CompetitorExplorerPage() {
       await loadCompetitors();
     } catch (err) { setError(err instanceof Error ? err.message : "Discovery failed."); }
     finally { setDiscovering(false); discoveryInFlight.current = false; setDiscoveryMode(null); }
+  }
+
+  async function scanInstagramProfiles() {
+    setInstagramScanning(true); setError(""); setNotice(""); setLastDiscovery(null);
+    try {
+      const response = await fetch("/api/instagram/discover", {
+        method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({}),
+      });
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.error || "Instagram scan failed.");
+      const outcomes = (result.outcomes ?? []) as Array<{ username: string; saved: number; error?: string }>;
+      const successful = outcomes.filter((item) => !item.error);
+      const failed = outcomes.filter((item) => item.error);
+      setNotice("Instagram scan finished: " + successful.length + " profiles checked, " + result.saved +
+        " media references saved. " + (failed.length ? failed.length + " profiles could not be scanned: " +
+        failed.map((item) => "@" + item.username + " — " + item.error).join("; ") : "All eligible profiles scanned successfully.") +
+        " Open Instagram Discovery to review saved posts.");
+    } catch (err) { setError(err instanceof Error ? err.message : "Instagram scan failed."); }
+    finally { setInstagramScanning(false); }
   }
 
   async function runAIScreen(item: Competitor) {
@@ -224,9 +244,9 @@ export default function CompetitorExplorerPage() {
     {notice && <div className="mb-4 rounded-lg border border-emerald-500/20 bg-emerald-500/10 p-3 text-sm text-emerald-300">{notice}{lastDiscovery?.quota?.search && lastDiscovery.quota.general && <div className="mt-1 text-xs text-emerald-200/70">Search quota remaining: {lastDiscovery.quota.search.remaining} · General units remaining: {lastDiscovery.quota.general.remaining}</div>}</div>}
 
     <section className="mb-6 rounded-xl border border-cyan-500/20 bg-[#111925] p-5">
-      <div className="mb-3 flex flex-wrap items-center justify-between gap-2"><div><h2 className="text-sm font-semibold">Manually tracked social channels</h2><p className="mt-1 text-xs text-slate-400">YouTube channels are promoted into your approved competitor list and monitored in a daily priority batch (up to 20 channels per run). Manual approval bypasses AI niche scoring; children’s and stock/share-market/trading channels remain blocked. Larger lists are processed in queued daily batches. Instagram profile URLs can be saved here; use Instagram Discovery to connect your professional account and retrieve eligible public Business/Creator posts.</p></div><Link href="/instagram" className="text-xs text-cyan-300 underline">Open Instagram Discovery</Link></div>
+      <div className="mb-3 flex flex-wrap items-center justify-between gap-2"><div><h2 className="text-sm font-semibold">Manually tracked social channels</h2><p className="mt-1 text-xs text-slate-400">YouTube channels are promoted into your approved competitor list and monitored in a daily priority batch (up to 20 channels per run). Manual approval bypasses AI niche scoring; children’s and stock/share-market/trading channels remain blocked. Larger lists are processed in queued daily batches. Instagram profile URLs can be saved here; use Instagram Discovery to connect your professional account and retrieve eligible public Business/Creator posts.</p></div><div className="flex flex-wrap items-center gap-3"><button type="button" onClick={() => void scanInstagramProfiles()} disabled={instagramScanning || discovering} className="inline-flex items-center gap-2 rounded-lg bg-fuchsia-500 px-3 py-2 text-xs font-semibold text-white disabled:opacity-50">{instagramScanning?<Loader2 size={14} className="animate-spin"/>:<RefreshCw size={14}/>} {instagramScanning?"Scanning Instagram...":"Scan Instagram Profiles"}</button><Link href="/instagram" className="text-xs text-cyan-300 underline">Open Instagram Discovery</Link></div></div>
       <div className="grid gap-3 md:grid-cols-[1fr_220px_auto]"><input value={manualUrl} onChange={e=>setManualUrl(e.target.value)} placeholder="Paste YouTube or Instagram URL" className="rounded-lg border border-slate-700 bg-[#0b121d] px-3 py-2 text-sm"/><input value={manualName} onChange={e=>setManualName(e.target.value)} placeholder="Display name (optional)" className="rounded-lg border border-slate-700 bg-[#0b121d] px-3 py-2 text-sm"/><button onClick={()=>void addManualLink()} disabled={manualBusy||!manualUrl.trim()} className="rounded-lg bg-cyan-500 px-4 py-2 text-sm font-semibold text-slate-950 disabled:opacity-50">{manualBusy?"Adding...":"Add link"}</button></div>
-      {manualLinks.length>0&&<div className="mt-4 space-y-2">{manualLinks.map(link=><div key={link.id} className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-slate-800 bg-[#0b121d] px-3 py-2"><div className="min-w-0"><span className="mr-2 rounded bg-slate-800 px-2 py-1 text-[10px] uppercase text-cyan-300">{link.platform}</span><span className="text-xs font-medium">{link.display_name}</span><a href={link.url} target="_blank" rel="noreferrer" className="ml-2 break-all text-[10px] text-sky-300 underline">{link.url}</a><div className="mt-1 text-[10px] text-slate-500">{link.platform==="youtube"?(link.is_active?(link.monitoring_status==="needs_resolution"?"Re-add this URL to enable monitoring":"Priority monitoring · "+(link.monitoring_status||"queued")):"Paused"):"Saved only · monitoring unavailable"}{link.last_checked_at?" · Last checked "+new Date(link.last_checked_at).toLocaleString("en-IN",{dateStyle:"medium",timeStyle:"short"}):""}{link.last_error?" · "+link.last_error:""}</div></div><div className="flex gap-3"><button onClick={()=>void toggleManualLink(link)} className="text-xs text-cyan-300 hover:text-cyan-200">{link.is_active?"Pause":"Resume"}</button><button onClick={()=>void removeManualLink(link.id)} className="text-xs text-red-300 hover:text-red-200">Remove</button></div></div>)}</div>}
+      {manualLinks.length>0&&<div className="mt-4 space-y-2">{manualLinks.map(link=><div key={link.id} className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-slate-800 bg-[#0b121d] px-3 py-2"><div className="min-w-0"><span className="mr-2 rounded bg-slate-800 px-2 py-1 text-[10px] uppercase text-cyan-300">{link.platform}</span><span className="text-xs font-medium">{link.display_name}</span><a href={link.url} target="_blank" rel="noreferrer" className="ml-2 break-all text-[10px] text-sky-300 underline">{link.url}</a><div className="mt-1 text-[10px] text-slate-500">{link.platform==="youtube"?(link.is_active?(link.monitoring_status==="needs_resolution"?"Re-add this URL to enable monitoring":"Priority monitoring · "+(link.monitoring_status||"queued")):"Paused"):link.is_active ? "Saved · included in Instagram Business Discovery scans" : "Paused · excluded from the next scan"}{link.last_checked_at?" · Last checked "+new Date(link.last_checked_at).toLocaleString("en-IN",{dateStyle:"medium",timeStyle:"short"}):""}{link.last_error?" · "+link.last_error:""}</div></div><div className="flex gap-3"><button onClick={()=>void toggleManualLink(link)} className="text-xs text-cyan-300 hover:text-cyan-200">{link.is_active?"Pause":"Resume"}</button><button onClick={()=>void removeManualLink(link.id)} className="text-xs text-red-300 hover:text-red-200">Remove</button></div></div>)}</div>}
     </section>
 
     <section className="overflow-hidden rounded-xl border border-slate-800 bg-[#111925]">
