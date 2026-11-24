@@ -1,0 +1,1 @@
+Add only licensed stock video/image assets here (.jpg, .jpeg, .png, .webp, .mp4, .mov, .mkv). The renderer chooses one asset per segment in deterministic filename order. Keep licence records outside this repository. If empty, original AIWithBh@i technical cards are rendered from the approved scene prompts and narration. No assets are downloaded automatically.
