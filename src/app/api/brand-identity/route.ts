@@ -57,7 +57,7 @@ export async function PUT(request: Request) {
       owner_id: auth.user!.id,
       brand_name: "AIWithBh@i",
       instagram_username: "automationraks",
-      display_name,
+      display_name: displayName,
       bio,
       category: text("category", DEFAULTS.category, 80),
       website_url: website || null,
