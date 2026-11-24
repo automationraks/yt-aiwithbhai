@@ -1,0 +1,36 @@
+name: Local video pipeline checks
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "local-worker/**"
+      - "n8n/**"
+      - ".github/workflows/local-video-pipeline.yml"
+  pull_request:
+    branches: [main]
+    paths:
+      - "local-worker/**"
+      - "n8n/**"
+      - ".github/workflows/local-video-pipeline.yml"
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Install worker dependencies
+        working-directory: local-worker
+        run: npm install --ignore-scripts
+      - name: Check worker JavaScript syntax
+        working-directory: local-worker
+        run: npm run check
+      - name: Validate n8n workflow JSON
+        run: |
+          node -e "JSON.parse(require('fs').readFileSync('n8n/daily-content-research.json','utf8'))"
+          node -e "JSON.parse(require('fs').readFileSync('n8n/approved-video-production.json','utf8'))"
+      - name: Compile Python transcription script
+        run: python -m py_compile local-worker/src/transcribe.py
