@@ -1,4 +1,4 @@
-import { randomBytes, scrypt as scryptCallback } from "node:crypto";
+import { randomBytes, scrypt as scryptCallback, timingSafeEqual } from "node:crypto";
 import { promisify } from "node:util";
 import { NextRequest, NextResponse } from "next/server";
 import { APP_SESSION_COOKIE, APP_SESSION_MAX_AGE, createSupabaseAdminClient, hashSessionToken } from "@/lib/auth/session";
@@ -15,8 +15,10 @@ export async function POST(request: NextRequest) {
   const displayName = typeof body.displayName === "string" ? body.displayName.trim().slice(0, 80) : "";
   const setupSecret = typeof body.setupSecret === "string" ? body.setupSecret : "";
   const configuredSecret = process.env.APP_SETUP_SECRET;
-  if (!configuredSecret || setupSecret.length !== configuredSecret.length ||
-      !Buffer.from(setupSecret).equals(Buffer.from(configuredSecret))) {
+  const suppliedSecret = Buffer.from(setupSecret);
+  const expectedSecret = Buffer.from(configuredSecret || "");
+  if (!configuredSecret || suppliedSecret.length !== expectedSecret.length ||
+      !timingSafeEqual(suppliedSecret, expectedSecret)) {
     return NextResponse.json({ error: "Account setup is not authorized. Check APP_SETUP_SECRET." }, { status: 403 });
   }
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return NextResponse.json({ error: "Enter a valid email address." }, { status: 400 });
