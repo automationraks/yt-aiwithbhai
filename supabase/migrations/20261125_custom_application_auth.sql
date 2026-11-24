@@ -26,8 +26,8 @@ create index if not exists app_sessions_expiry_idx on public.app_sessions(expire
 do $$
 begin
   if to_regclass('auth.users') is not null then
-    insert into public.app_users (id, email, display_name)
-    select id, lower(email), coalesce(raw_user_meta_data->>'full_name', raw_user_meta_data->>'name')
+    insert into public.app_users (id, email, display_name, role)
+    select id, lower(email), coalesce(raw_user_meta_data->>'full_name', raw_user_meta_data->>'name'), 'member'
     from auth.users
     where email is not null
     on conflict (id) do nothing;
@@ -91,6 +91,7 @@ begin
   if v_user_id is not null then
     update public.app_users
       set password_hash = p_password_hash,
+          role = 'owner',
           display_name = coalesce(nullif(trim(p_display_name), ''), display_name),
           updated_at = now()
     where id = v_user_id and password_hash is null;
