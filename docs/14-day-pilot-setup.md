@@ -76,10 +76,10 @@ Edit `.env` with Supabase project URL, service-role key, Gemini API key, the sam
 
 Check:
 ```powershell
-& "C:\ffmpeg\bin\\ffmpeg.exe" -version
-& "C:\ffmpeg\bin\\ffprobe.exe" -version
-& "C:\ffmpeg\bin\\ffmpeg.exe" -filters | findstr subtitles
-& "C:\ffmpeg\bin\\ffmpeg.exe" -encoders | findstr libx264
+& "C:\ffmpeg\bin\ffmpeg.exe" -version
+& "C:\ffmpeg\bin\ffprobe.exe" -version
+& "C:\ffmpeg\bin\ffmpeg.exe" -filters | findstr subtitles
+& "C:\ffmpeg\bin\ffmpeg.exe" -encoders | findstr libx264
 python -c "import faster_whisper; print('ASR ready')"
 npm start
 ```
