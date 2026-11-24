@@ -12,7 +12,7 @@ function safeEqual(a: string, b: string) {
 }
 function normalizeTranscript(value: string) {
   return value.toLocaleLowerCase().normalize("NFKC")
-    .replace(/[^\\p{L}\\p{N}]+/gu, " ").trim().split(/\\s+/).filter(Boolean);
+    .replace(/[^\p{L}\p{N}]+/gu, " ").trim().split(/\s+/).filter(Boolean);
 }
 function transcriptMatches(expected: string, actual: string) {
   const a = normalizeTranscript(expected);
