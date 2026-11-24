@@ -77,12 +77,27 @@ export async function PATCH(request:Request){const s=await createSupabaseServerC
  let productionDispatch:"queued"|"not_configured"|"failed"|"not_requested"="not_requested";
  if(body.status==="approved"){
    const webhook=process.env.N8N_VIDEO_PRODUCTION_WEBHOOK_URL;
-   if(!webhook){productionDispatch="not_configured";}
+   const voiceover=String(data.script_package?.voiceover||data.script_package?.script||"").trim();
+   if(!voiceover){productionDispatch="failed";await s.from("content_ideas").update({video_production_status:"failed"}).eq("id",data.id).eq("owner_id",user.id);}
+   else if(!webhook){productionDispatch="not_configured";}
    else try{
-     const response=await fetch(webhook,{method:"POST",headers:{"Content-Type":"application/json",...(process.env.N8N_WEBHOOK_SECRET?{"x-webhook-secret":process.env.N8N_WEBHOOK_SECRET}:{})},body:JSON.stringify({event:"content_approved",ownerId:user.id,idea:{id:data.id,title:data.title,hook:data.hook,outline:data.outline,scriptPackage:data.script_package,targetDurationSeconds:data.target_duration_seconds,sourceReferences:data.source_references,platforms:["youtube_shorts","instagram_reels"],aspectRatio:"9:16",minimumDurationSeconds:30,maximumDurationSeconds:60}}),signal:AbortSignal.timeout(15000)});
+     const {createHash}=await import("node:crypto");
+     const scriptHash=createHash("sha256").update(voiceover).digest("hex");
+     const duration=Math.max(30,Math.min(60,Number(data.target_duration_seconds)||35));
+     const words=voiceover.split(/\\s+/).filter(Boolean);
+     const segmentCount=Math.ceil(duration/7);
+     const segments=Array.from({length:segmentCount},(_,index)=>{
+       const startSeconds=index*7,endSeconds=Math.min(duration,(index+1)*7);
+       const from=Math.floor(index*words.length/segmentCount),to=Math.floor((index+1)*words.length/segmentCount);
+       const scene=(Array.isArray(data.script_package?.scenes)?data.script_package.scenes:[]).find((x:{startSeconds?:number;endSeconds?:number})=>Number(x.endSeconds)>startSeconds&&Number(x.startSeconds)<endSeconds);
+       return {sequence:index+1,startSeconds,endSeconds,durationSeconds:endSeconds-startSeconds,narration:words.slice(from,to).join(" "),visualPrompt:scene?.visualPrompt??"",onScreenText:scene?.onScreenText??""};
+     });
+     const snapshot={approved_script_snapshot:voiceover,approved_script_hash:scriptHash,video_segments:segments,video_production_status:"queued"};
+     const {data:locked,error:lockError}=await s.from("content_ideas").update(snapshot).eq("id",data.id).eq("owner_id",user.id).select("id").maybeSingle();
+     if(lockError||!locked)throw new Error("Could not freeze the approved script before production.");
+     const response=await fetch(webhook,{method:"POST",headers:{"Content-Type":"application/json",...(process.env.N8N_WEBHOOK_SECRET?{"x-webhook-secret":process.env.N8N_WEBHOOK_SECRET}:{})},body:JSON.stringify({event:"content_approved",ownerId:user.id,callbackUrl:(process.env.NEXT_PUBLIC_APP_URL||"").replace(/\\/$/,"")+"/api/video-production/complete",idea:{id:data.id,title:data.title,hook:data.hook,outline:data.outline,scriptPackage:data.script_package,approvedScript:voiceover,approvedScriptHash:scriptHash,segments,targetDurationSeconds:duration,sourceReferences:data.source_references,platforms:["youtube_shorts","instagram_reels"],aspectRatio:"9:16",minimumDurationSeconds:30,maximumDurationSeconds:60,clipDurationSeconds:7,renderInstructions:{generateEachSegmentSeparately:true,strictSequence:true,joinWithoutReordering:true,preserveExactApprovedNarration:true,generateCaptionsFromApprovedNarration:true,transcribeFinalAudioForVerification:true,uploadFinalMp4ToSupabaseBucket:"generated-videos",uploadPath:user.id+"/"+data.id+"/final.mp4",callbackRequiresTranscriptAndVerification:true}}}),signal:AbortSignal.timeout(15000)});
      if(!response.ok)throw new Error("n8n webhook returned HTTP "+response.status);
      productionDispatch="queued";
-     await s.from("content_ideas").update({video_production_status:"queued"}).eq("id",data.id).eq("owner_id",user.id);
    }catch(e){productionDispatch="failed";await s.from("content_ideas").update({video_production_status:"failed"}).eq("id",data.id).eq("owner_id",user.id);}
  }
  return NextResponse.json({idea:data,productionDispatch});}
