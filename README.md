@@ -42,10 +42,21 @@ Find creators who teach technical AI systems engineering. Do not classify channe
 
 ## Existing stack retained
 - Next.js 15 + TypeScript on Vercel
-- Supabase PostgreSQL, Auth and Storage
+- Supabase PostgreSQL and Storage (custom application authentication; Supabase Auth is not used)
 - n8n Cloud for scheduled workflows
 - Gemini as primary AI provider; Groq as fallback
 - YouTube Data API with quota-aware request reservations
+
+## Application authentication
+
+Supabase is used only for PostgreSQL and Storage. Email/password authentication and opaque database-backed sessions are managed by this application. Passwords use scrypt hashes; session tokens are stored only as SHA-256 hashes and sent in HttpOnly cookies (Secure in production, SameSite=Lax) with a 7-day expiry.
+
+1. Apply `supabase/migrations/20261125_custom_application_auth.sql` in Supabase SQL Editor.
+2. In Vercel, retain `NEXT_PUBLIC_SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY`; add a long random server-only `APP_SETUP_SECRET`. The Supabase anon key is no longer used by the application.
+3. Deploy and open `/setup` to create the first owner account using that secret. The endpoint closes after the first password is set.
+4. Sign in at `/login`. Existing Supabase Auth UUIDs and email addresses are copied to `app_users` to preserve `owner_id` relationships; existing Supabase passwords are not migrated.
+
+Protected API handlers validate the custom session before database access. The server-side service-role client bypasses RLS, so never expose it or its key to browser code. Additional accounts must be provisioned through an authenticated admin workflow; public registration is not enabled.
 
 ## YouTube API quota setup
 Run `supabase/migrations/20261115_youtube_quota_management.sql` in Supabase SQL Editor if it has not already been applied. The application tracks its own API usage; other apps using the same Google Cloud project are not included. Verify actual usage in Google Cloud Console → APIs & Services → YouTube Data API v3 → Quotas.
