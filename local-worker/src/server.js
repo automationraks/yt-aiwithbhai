@@ -33,7 +33,7 @@ async function process(row){
  const planTotal=segments.reduce((n,s)=>n+s.durationSeconds,0);
  if(Math.abs(planTotal-target)>1.5)throw new Error("Segment timeline does not match target video duration.");
  const rendered=await renderSegments({job:{...j,segments},workDir:work,stockDir:stock,ffmpeg,ffprobe});
- const asr=await transcribe(adjusted);const srt=path.join(work,"captions.srt");await writeSubtitles(asr,srt);
+ const asr=await transcribe(final);const srt=path.join(work,"captions.srt");await writeSubtitles(asr,srt);
  const duration=await muxFinal({silent:rendered.silent,audio:adjusted,subtitles:srt,final,ffmpeg,ffprobe});
  const results=[];for(let i=0;i<rendered.clips.length;i++){await upload(rendered.clips[i],segments[i].outputStoragePath);results.push({sequence:segments[i].sequence,storagePath:segments[i].outputStoragePath,status:"completed"});}
  await upload(final,j.storage.finalPath);
