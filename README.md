@@ -1,91 +1,390 @@
 # AIWithBh@i Studio
 
-AI-powered YouTube research and content operations workspace for the existing **AIWithBh@i** channel.
+**Your AI research desk and content-production workspace — built to help one creator turn useful technology signals into thoughtful, original short-form content.**
 
-## Channel positioning
+AIWithBh@i Studio brings YouTube research, Instagram research, AI-assisted planning, content packaging and human approvals into one place. It is designed around a simple idea:
 
-**Niche:** AI Systems Architecture & Engineering  
-**Audience:** Software engineers, backend developers, AI engineers, solution architects and IT professionals.  
-**Promise:** Explain how to design, build, scale, evaluate and operate production-grade AI systems.
+> Let the system do the research and preparation. Let a human make the important decisions.
 
-### Core content pillars
+This document explains how the solution fits together, what happens to the data, which services do what, and where automation deliberately stops.
+
+---
+
+## 1. The big picture
+
+The platform has five main parts:
+
+1. **Research** – learn from relevant YouTube channels, videos, Instagram professional profiles and posts, plus wider AI and technology signals.
+2. **Opportunity discovery** – turn those signals into original topics for the AIWithBh@i audience.
+3. **Content preparation** – prepare the hook, script, narration, scene plan, visual prompts and platform copy.
+4. **Human review** – let the channel owner approve or reject an idea before it moves forward.
+5. **Production hand-off** – send approved content to an n8n workflow for video production. The finished video should be reviewed before publishing.
+
+The intended daily rhythm is:
+
+```text
+6:00 AM IST
+    |
+    v
+Daily research starts in the cloud
+    |
+    +--> YouTube research signals
+    |
+    +--> Connected / tracked Instagram signals
+    |
+    +--> AI topic and opportunity analysis
+    |
+    v
+Content Opportunities in the dashboard
+    |
+    v
+Human reviews the idea and its content package
+    |
+    +--> Reject / keep for later
+    |
+    +--> Approve
+            |
+            v
+       n8n production workflow
+            |
+            v
+       Video draft (9:16, HD target)
+            |
+            v
+       Human reviews the finished video
+            |
+            v
+       Publishing only after explicit authorization
+```
+
+The 6:00 AM schedule is configured in Vercel Cron. The scheduled route sends a request to an n8n webhook; the research workflow itself must be configured and activated in n8n.
+
+---
+
+## 2. Who the channel is for
+
+**Brand:** AIWithBh@i  
+**Focus:** Practical AI engineering, AI systems and automation  
+**Audience:** Software engineers, backend developers, AI engineers, solution architects and IT professionals.
+
+The editorial focus includes:
+
 - AI system design and architecture
-- LLM application architecture and orchestration
+- Large language model (LLM) applications
 - Retrieval-augmented generation (RAG), embeddings and vector databases
 - AI agents and multi-agent systems
 - Model serving, inference and optimization
-- Distributed systems and scalable AI infrastructure
-- Evaluation, observability, reliability, security and governance
-- Real-world AI architecture case studies
+- Production reliability, evaluation and observability
+- Security, privacy, governance, cost and latency
+- Real-world architecture and engineering case studies
 
-### Global AI intelligence and model watchlist
+The goal is not to repeat every AI headline. It is to explain what is useful, how a system works, what trade-offs matter and what an engineer can learn from it.
 
-The research radar's source registry covers frontier models, hardware and inference, cloud AI, open-weight ecosystems, developer infrastructure and research papers. The model watchlist includes GPT, Claude, Gemini, Grok, Kimi, DeepSeek, Qwen, GLM, MiniMax, Llama, Mistral, Command, Granite, Nemotron, Phi, Seed, ERNIE and Hunyuan. This is an extensible editorial watchlist, not a claim that every family has a working RSS feed or that every listed model is the newest release.
+---
 
-Some publishers expose RSS/Atom while others only expose web pages or release feeds. Feed availability must be checked; an unavailable feed is not evidence that a provider has no news. Prefer official announcements, documentation, papers and repositories.
+## 3. Application architecture
 
-## Case-study-first editorial strategy
+The application is a Next.js web app. It handles the dashboard, authenticated user experience and server-side API routes.
 
-The channel's main output is technical case studies, not headline summaries. Evaluate each trend for:
-- Architecture breakdown: components, data flow, model serving and orchestration.
-- Engineering deep dive: training, fine-tuning, inference, evaluation and reliability.
-- Product/business case study: use case, adoption, trade-offs and measurable outcomes.
-- Model/platform comparison: capability, cost, latency, quality, privacy and openness.
-- Open-source implementation: repository, licence, deployment and reproducibility.
-- Failure analysis: incidents, security, limitations and engineering lessons.
-- Research-to-production: translate papers into practical implementation and explain what remains unproven.
+| Layer | Technology | Responsibility |
+|---|---|---|
+| Web application | Next.js 15, React, TypeScript | Dashboard, pages and API routes |
+| Hosting and schedules | Vercel | Hosts the web app and invokes scheduled routes |
+| Database | Supabase PostgreSQL | Stores users' research, ideas, scripts, approvals and settings |
+| Authentication | Supabase Auth | Identifies the signed-in user |
+| File storage | Supabase Storage (where configured) | Stores supported media and generated assets |
+| AI reasoning | Gemini | Primary AI provider for research and structured content generation |
+| AI fallback | Groq | Alternative provider when configured and eligible for fallback |
+| Workflow automation | n8n Cloud | Receives scheduled research and approved-production events |
+| YouTube research | YouTube Data API v3 | Finds channels/videos and retrieves permitted metadata |
+| Instagram research | Official Meta / Instagram Graph APIs | Retrieves eligible professional-account and media information |
 
-Each case study should collect the original announcement or paper, primary documentation, code/repository and independent corroboration where possible. Separate confirmed facts, vendor claims, benchmark results and editorial analysis. Never invent performance metrics or imply that a demo is production-ready.
+### How a request moves through the system
 
-## Research rules
-Find creators who teach technical AI systems engineering. Do not classify channels as relevant merely because they discuss AI news, AI tools or prompt engineering. Review multiple videos for technical depth, accuracy, practical implementation and relevance to software/IT professionals.
+1. A user opens the dashboard and signs in.
+2. The browser calls a Next.js API route.
+3. The API route verifies the Supabase session.
+4. The route reads or writes only records belonging to the signed-in user.
+5. If AI work is needed, the server calls the configured AI provider.
+6. Results are stored in Supabase and returned to the dashboard.
+7. Scheduled or approved automation events are sent server-to-server to n8n.
 
-## Existing stack retained
-- Next.js 15 + TypeScript on Vercel
-- Supabase PostgreSQL, Auth and Storage
-- n8n Cloud for scheduled workflows
-- Gemini as primary AI provider; Groq as fallback
-- YouTube Data API with quota-aware request reservations
+The browser does not need direct access to private AI, Meta, YouTube or n8n secrets.
 
-## YouTube API quota setup
-Run `supabase/migrations/20261115_youtube_quota_management.sql` in Supabase SQL Editor if it has not already been applied. The application tracks its own API usage; other apps using the same Google Cloud project are not included. Verify actual usage in Google Cloud Console → APIs & Services → YouTube Data API v3 → Quotas.
+---
 
-## Research setup
-The starter keyword action seeds English and Hindi searches for AI system design, LLM architecture, RAG, AI agents and production AI engineering. Search language is a relevance hint, not proof of spoken language.
+## 4. Research inputs
 
-Creator discovery returns candidates. AI screening is advisory and cannot establish technical correctness or substitute for watching sample videos. Manually approve creators before including them in the active research set.
+### YouTube
 
-## AI providers
-Set `GEMINI_API_KEY` for Gemini screening. Optional `GEMINI_MODEL` defaults to `gemini-3.5-flash-lite`. Gemini calls use Google's Interactions API (`/v1beta/interactions`) with stateless requests (`store: false`) and JSON response formatting. Groq fallback uses `GROQ_API_KEY` and optional `GROQ_MODEL` (default `openai/gpt-oss-120b`). Video Explorer classification is pinned to Gemini and does not fall back to Groq.
+The YouTube research flow discovers candidate channels and collects video/channel metadata using the YouTube Data API.
 
-## Local development
-Install dependencies with `npm install`, copy `.env.example` to `.env.local`, add server-side credentials and run `npm run dev`.
+AI screening helps assess whether a candidate is relevant to the channel's technical audience. It is a recommendation aid, not proof that a creator's information is correct. Human review remains important.
 
-## Automation boundary
-Manual research and refresh endpoints do not create scheduled workflows. Configure and activate n8n Cloud workflows separately. Publishing and channel-setting changes must remain approval-gated.
+The application includes quota-aware tracking for API calls made through this project. YouTube search requests are relatively expensive in quota units, so discovery and monitoring should be deliberate. The app's quota tracker cannot see usage by other applications using the same Google Cloud project.
 
-## Instagram Discovery (official Meta APIs)
+### Instagram
 
-The Instagram Discovery page connects a professional Instagram Business/Creator account through Meta OAuth and uses the Instagram Graph API / Business Discovery for the connected account and manually entered eligible public professional usernames. It saves available captions, post/Reel permalinks, timestamps and engagement counts as research references. It does not scrape Instagram, search all public Reels, download third-party videos or republish creator media.
+Instagram research uses official Meta APIs for eligible professional Business or Creator accounts and supported Business Discovery lookups.
 
-### Required server environment variables
+The integration can save available profile and media information, such as captions, links, timestamps and engagement counts, depending on permissions and API availability.
 
-- `META_APP_ID`: Meta Developer app ID.
-- `META_APP_SECRET`: Meta Developer app secret.
-- `META_REDIRECT_URI`: exact OAuth callback URL, e.g. `https://YOUR_DOMAIN/api/instagram/callback`. Register the same URL in the Meta app.
-- `META_GRAPH_VERSION`: optional Graph API version; defaults to `v25.0`.
-- `META_TOKEN_ENCRYPTION_KEY`: base64-encoded 32-byte key used for AES-256-GCM encryption of the Page access token.
-- Existing `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_ROLE_KEY`, `GEMINI_API_KEY` (or `GROQ_API_KEY`) are also required.
+It is not an unrestricted Instagram search engine. It does not scrape the platform, retrieve every public Reel, or provide private account analytics. Some URLs and personal/private accounts cannot be resolved through the supported API.
 
-Generate an encryption key with Node.js: `node -e "console.log(require('crypto').randomBytes(32).toString('base64'))"`. Keep it private and stable; do not commit it or expose it with a `NEXT_PUBLIC_` prefix.
+Instagram posts are research references and trend signals. They are not source material to copy or repost.
 
-### Meta setup
+### Research quality
 
-1. Create/configure a Meta Developer app and add the Facebook Login and Instagram Graph API products required for your app configuration.
-2. Add the exact redirect URL above to Valid OAuth Redirect URIs.
-3. Link the Instagram Business/Creator account to a Facebook Page and ensure the authorizing Facebook user has access to that Page.
-4. Request the least permissions required by the implemented flow: `pages_show_list`, `pages_read_engagement`, `instagram_basic` and `instagram_manage_insights`. Meta may require App Review and Business Verification before accounts outside app roles can be accessed.
-5. Apply `supabase/migrations/20261122_instagram_research_integration.sql` in the Supabase SQL Editor.
-6. Add the environment variables in Vercel and redeploy, then connect from **Research → Instagram Discovery**.
+AI-generated findings should be checked against primary sources where possible: official product documentation, engineering blogs, papers, release notes and source repositories. Separate verified facts from vendor claims, benchmarks and editorial interpretation. Do not invent metrics or imply that a demonstration is production-ready.
 
-Instagram content is used as a topic signal to create a new original 50–60 second script in Content Calendar. Drafts remain approval-gated. Verify technical claims with primary sources before publishing. API availability and returned fields depend on Meta's current platform eligibility, permissions and API version.
+---
+
+## 5. Content Opportunities and the short-video package
+
+Content Opportunities combines relevant research signals and asks the AI provider to develop original angles for the channel.
+
+Each idea is intended to include:
+
+- Topic, title and opening hook
+- Audience problem and technical angle
+- Suggested structure / outline
+- Research references where available
+- Complexity classification
+- Complete script and voiceover
+- Scene-by-scene timing
+- Visual-generation prompt for each scene
+- On-screen text
+- Instagram caption and hashtags
+- YouTube Shorts title and description
+- A consistent vertical-video style
+
+### Video duration
+
+The intended video is one shared vertical concept for YouTube Shorts and Instagram Reels.
+
+| Topic complexity | Target duration |
+|---|---:|
+| Simple | 30–40 seconds |
+| Medium | 40–50 seconds |
+| Complex | 50–60 seconds |
+
+The allowed duration is **30–60 seconds**. The script should fit the topic naturally; it should not be padded just to reach a target length.
+
+**Video format target:** 9:16 vertical, HD-quality output, with readable subtitles, clear narration and visuals that support the explanation.
+
+The content package and scene prompts are prepared by the app. Actual rendered video output depends on the connected n8n production workflow and the video-generation service selected for that workflow.
+
+---
+
+## 6. Approval is a deliberate product feature
+
+Automation should not take control away from the creator.
+
+The intended approval sequence is:
+
+| Stage | What happens | Who decides? |
+|---|---|---|
+| Research | Gather signals and identify opportunities | System |
+| Draft | Prepare script and production package | System |
+| Idea review | Approve or reject the idea | Channel owner |
+| Video production | Start only after approval | System, after approval |
+| Final video review | Check accuracy, quality, branding and rights | Channel owner |
+| Publishing | Publish only when explicitly authorized | Channel owner / separately authorized workflow |
+
+Approving an idea is permission to start the configured production hand-off. It is **not** permission to publish the finished video.
+
+The system must not automate YouTube views, likes, subscriptions or comments.
+
+---
+
+## 7. Cloud automation and schedules
+
+### Daily content research
+
+The Vercel Cron configuration includes:
+
+- Route: `/api/cron/daily-content`
+- Schedule: `30 0 * * *` (UTC)
+- Local time: **6:00 AM IST**
+
+The route checks `CRON_SECRET` and sends the daily research event to `N8N_DAILY_CONTENT_WEBHOOK_URL`. The request includes the brand, niche, timezone, platform targets, duration bands and approval requirements.
+
+### Competitor monitoring
+
+The existing Vercel Cron configuration also includes:
+
+- Route: `/api/cron/manual-channel-monitor`
+- Schedule: `15 2 * * *` (UTC)
+- Local time: **7:45 AM IST**
+
+This is a separate monitoring task; it is not the daily content-research schedule.
+
+### n8n's role
+
+n8n is the workflow engine, not the dashboard database. It receives events from the app and coordinates configured steps such as research, AI processing, video generation, file storage and notifications.
+
+The app expects these webhook endpoints to be configured:
+
+- `N8N_DAILY_CONTENT_WEBHOOK_URL` – daily research workflow.
+- `N8N_VIDEO_PRODUCTION_WEBHOOK_URL` – production workflow for approved ideas.
+
+The exact video-generation provider, credentials, rendering settings, storage destination and final-video callback must be configured in n8n. A webhook being configured does not by itself mean that a complete video-rendering workflow is ready.
+
+---
+
+## 8. Data and privacy boundaries
+
+Supabase is the system of record for application data.
+
+The database stores information such as:
+
+- Channel and competitor research
+- YouTube video evidence and Instagram research references
+- Content ideas and their source references
+- Scripts, scene plans and production metadata
+- Approval decisions and workflow status
+- Brand identity and application settings
+
+Tables that contain user-owned records use Row Level Security (RLS) policies so users can access only their own data through the authenticated application.
+
+Server-only credentials must stay on the server. Never commit real keys or add private credentials to a variable prefixed with `NEXT_PUBLIC_`.
+
+The Meta token encryption key must remain stable after encrypted tokens have been saved. Replacing it without a migration/re-encryption plan can make existing stored tokens unreadable.
+
+---
+
+## 9. Important environment variables
+
+Add values in Vercel Project Settings → Environment Variables and in the relevant local environment file for development. Do not commit actual secret values.
+
+| Variable | Used for | Visibility |
+|---|---|---|
+| `NEXT_PUBLIC_SUPABASE_URL` | Supabase project URL | Browser + server |
+| `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Supabase client authentication | Browser + server |
+| `SUPABASE_SERVICE_ROLE_KEY` | Privileged server-side Supabase operations where used | Server only |
+| `GEMINI_API_KEY` | Primary AI provider | Server only |
+| `GEMINI_MODEL` | Optional Gemini model selection | Server only |
+| `AI_PRIMARY_PROVIDER` | Selects the preferred AI provider | Server only |
+| `GROQ_API_KEY` | AI fallback provider | Server only |
+| `GROQ_MODEL` | Optional Groq model selection | Server only |
+| `YOUTUBE_API_KEY` | YouTube Data API access | Server only |
+| `META_APP_ID` | Meta app identifier | Server configuration |
+| `META_APP_SECRET` | Meta OAuth app secret | Server only |
+| `META_REDIRECT_URI` | Exact Meta OAuth callback URL | Server configuration |
+| `META_TOKEN_ENCRYPTION_KEY` | Encrypts stored Meta tokens | Server only |
+| `META_LOGIN_CONFIG_ID` | Meta Login for Business configuration | Server configuration |
+| `N8N_BASE_URL` | n8n instance base URL, if used by configured routes | Server configuration |
+| `N8N_WEBHOOK_SECRET` | Shared secret for app-to-n8n requests | Server only |
+| `N8N_DAILY_CONTENT_WEBHOOK_URL` | Daily research workflow endpoint | Server only |
+| `N8N_VIDEO_PRODUCTION_WEBHOOK_URL` | Approved video production endpoint | Server only |
+| `CRON_SECRET` | Protects scheduled API routes | Server only |
+| `NEXT_PUBLIC_APP_URL` | Public application URL, where used | Browser + server |
+
+Only configure integrations you actually use. Some routes may have additional requirements; check the relevant route and the current deployment environment before enabling them.
+
+---
+
+## 10. Database migrations
+
+Database structure is versioned in `supabase/migrations/`.
+
+A migration should be applied to the intended Supabase project before deploying code that depends on its tables or columns. Do not blindly re-run migrations that have already been applied; check the project's migration history and current schema first.
+
+The repository contains migrations for features including:
+
+- YouTube quota management
+- Competitor discovery and review
+- Instagram research integration
+- Brand identity and Brand Studio
+- Research-backed content calendar and scripts
+- Channel Preparation Mode
+- Short-video package and production status fields
+
+The migration files describe the intended schema. Their presence in Git does not prove they have already been executed in Supabase.
+
+---
+
+## 11. Repository map
+
+A quick guide to the main folders:
+
+```text
+.
+├── src/
+│   ├── app/
+│   │   ├── api/                 # Server-side API routes
+│   │   │   ├── cron/            # Scheduled Vercel endpoints
+│   │   │   ├── competitors/     # YouTube competitor discovery
+│   │   │   ├── instagram/       # Meta OAuth and Instagram research
+│   │   │   ├── content-opportunities/
+│   │   │   └── brand-studio/
+│   │   ├── content-opportunities/ # Opportunity review dashboard
+│   │   └── ...                  # Other dashboard pages
+│   └── lib/
+│       ├── ai/                  # AI provider and JSON generation helpers
+│       └── supabase/            # Supabase server/browser clients
+├── supabase/
+│   └── migrations/              # Versioned database schema changes
+├── vercel.json                  # Vercel Cron schedules
+├── package.json                 # Dependencies and project scripts
+└── README.md                    # Solution architecture and operating model
+```
+
+---
+
+## 12. Deploying and operating the solution
+
+A typical release follows this order:
+
+1. Pull the intended Git branch.
+2. Install dependencies with `npm install`.
+3. Run `npm run typecheck` and `npm run build`.
+4. Apply any pending Supabase migrations.
+5. Confirm required environment variables in Vercel.
+6. Deploy to a Preview environment first.
+7. Test sign-in, research pages, Content Opportunities and approval actions.
+8. Test the n8n webhook with a non-production sample.
+9. Confirm the scheduled route is protected and the Vercel Cron job is visible.
+10. Promote to Production only after the checks pass.
+
+Useful local commands:
+
+```bash
+npm install
+npm run dev
+npm run typecheck
+npm run build
+npm run lint
+```
+
+---
+
+## 13. What this architecture does — and does not — promise
+
+**Designed to do**
+
+- Run cloud-hosted research and scheduled workflow triggers.
+- Combine supported YouTube and Instagram research signals.
+- Prepare original content ideas and short-form production briefs.
+- Keep approval decisions with the channel owner.
+- Hand approved work to a configured n8n workflow.
+- Keep application data in Supabase and application code in GitHub.
+
+**Not automatic just because the app is deployed**
+
+- Meta approval, account eligibility or unrestricted Instagram search.
+- A working n8n workflow or a selected video-generation provider.
+- Completed HD rendering, storage, or delivery of the final video.
+- Automatic publishing to YouTube or Instagram.
+- Proof that a generated claim, script or visual is accurate or rights-cleared.
+- Successful execution of a database migration that has only been committed to Git.
+
+The repository contains application code and integration points. Each external service still needs valid credentials, permissions, configuration and end-to-end testing.
+
+---
+
+## 14. The guiding principle
+
+**Research broadly. Explain clearly. Create originally. Review carefully. Publish deliberately.**
+
+That is the architecture behind AIWithBh@i Studio.
