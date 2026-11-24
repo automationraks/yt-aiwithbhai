@@ -1,7 +1,7 @@
 -- Durable queue between n8n Cloud and the outbound-polling Windows renderer.
 create table if not exists public.video_render_jobs (
  id uuid primary key default gen_random_uuid(),
- owner_id uuid not null references auth.users(id) on delete cascade,
+ owner_id uuid not null references public.app_users(id) on delete cascade,
  idea_id uuid not null references public.content_ideas(id) on delete cascade,
  script_hash text not null,
  status text not null default 'queued' check(status in ('queued','processing','completed','failed')),
