@@ -59,7 +59,7 @@ Redeploy Vercel after setting URLs. Existing cron schedule `30 0 * * *` is 06:00
 
 ## 4. Windows setup
 
-Install Node.js 20+, Python 3.10–3.12 and FFmpeg/FFprobe. Then in PowerShell:
+Install Node.js 20+, Python 3.10–3.12 and a full FFmpeg Windows build that includes the libass `subtitles` filter and `libx264` encoder. Adjust the example executable paths below if you install elsewhere. Then in PowerShell:
 
 ```powershell
 cd E:\FR_Projects\yt-aiwithbhai\local-worker
@@ -76,8 +76,10 @@ Edit `.env` with Supabase project URL, service-role key, Gemini API key, the sam
 
 Check:
 ```powershell
-& $env:FFMPEG_PATH -version
-& $env:FFPROBE_PATH -version
+& "C:\\ffmpeg\\bin\\ffmpeg.exe" -version
+& "C:\\ffmpeg\\bin\\ffprobe.exe" -version
+& "C:\\ffmpeg\\bin\\ffmpeg.exe" -filters | findstr subtitles
+& "C:\\ffmpeg\\bin\\ffmpeg.exe" -encoders | findstr libx264
 python -c "import faster_whisper; print('ASR ready')"
 npm start
 ```
