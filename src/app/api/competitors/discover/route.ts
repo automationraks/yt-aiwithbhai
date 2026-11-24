@@ -201,8 +201,8 @@ export async function POST(request: NextRequest) {
     const channelIds = new Set<string>();
 
     // Search for videos that indicate the desired format, not channels merely discussing AI.
-    // OR-grouping preserves keyword coverage while reducing 30+ requests to at most four.
-    for (const searchQuery of searchQueries) {
+    // OR-grouping preserves keyword coverage while limiting discovery to six search requests.
+    for (const searchQuery of searchQueries.slice(0, MAX_SEARCH_REQUESTS)) {
       const reservation = await reserveQuota(supabase, "search");
       if (!reservation.allowed) return NextResponse.json({ error: "Daily YouTube search request limit reached.", quota: reservation }, { status: 429 });
       const search = await youtubeGet<{ items?: Array<{ id?: { videoId?: string }; snippet?: { channelId?: string; title?: string; description?: string; channelTitle?: string; publishedAt?: string; thumbnails?: { medium?: { url?: string }; default?: { url?: string } } } }> }>("search", {
