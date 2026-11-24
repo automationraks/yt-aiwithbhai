@@ -176,7 +176,26 @@ The content package and scene prompts are prepared by the app. Actual rendered v
 
 ---
 
-## 6. Approval is a deliberate product feature
+## 6. Approved-script video production and transcript verification
+
+Once an idea is approved, the application freezes the exact approved narration and calculates a SHA-256 fingerprint. The production workflow receives that immutable script plus an ordered timeline of clips, each up to approximately seven seconds long. The final clip can be shorter so the complete video remains within the 30–60 second target.
+
+The expected n8n workflow:
+1. Generate one continuous voice track from the approved narration without rewriting it.
+2. Generate separate 9:16 visual clips for each segment.
+3. Assemble clips strictly by sequence number, keep narration continuous and add subtitles from the approved script.
+4. Render one final MP4, transcribe its rendered audio and upload it to the private Supabase `generated-videos` bucket.
+5. Send a signed callback with the transcript, script hash, final storage path and completed segment list.
+
+The application validates the callback, checks the script fingerprint, confirms every segment is present and ordered, and compares the final transcript word-for-word after ignoring case and punctuation. A transcript mismatch or incomplete segment list moves the video to `review_required`; only a verified match is marked `ready`.
+
+Production events create in-app notifications. The Content Opportunities page shows recent notifications and provides a short-lived signed link to open a verified video. The bucket remains private.
+
+**Important:** The application supplies the workflow contract and verification endpoints. The actual n8n nodes, TTS, video-generation provider, FFmpeg assembly and speech-to-text provider must still be configured in n8n. See [the n8n verified video workflow guide](docs/n8n-verified-video-production.md).
+
+---
+
+## 7. Approval is a deliberate product feature
 
 Automation should not take control away from the creator.
 
@@ -197,7 +216,7 @@ The system must not automate YouTube views, likes, subscriptions or comments.
 
 ---
 
-## 7. Cloud automation and schedules
+## 8. Cloud automation and schedules
 
 ### Daily content research
 
@@ -232,7 +251,7 @@ The exact video-generation provider, credentials, rendering settings, storage de
 
 ---
 
-## 8. Data and privacy boundaries
+## 9. Data and privacy boundaries
 
 Supabase is the system of record for application data.
 
@@ -253,7 +272,7 @@ The Meta token encryption key must remain stable after encrypted tokens have bee
 
 ---
 
-## 9. Important environment variables
+## 10. Important environment variables
 
 Add values in Vercel Project Settings → Environment Variables and in the relevant local environment file for development. Do not commit actual secret values.
 
@@ -284,7 +303,7 @@ Only configure integrations you actually use. Some routes may have additional re
 
 ---
 
-## 10. Database migrations
+## 11. Database migrations
 
 Database structure is versioned in `supabase/migrations/`.
 
@@ -304,7 +323,7 @@ The migration files describe the intended schema. Their presence in Git does not
 
 ---
 
-## 11. Repository map
+## 12. Repository map
 
 A quick guide to the main folders:
 
@@ -332,7 +351,7 @@ A quick guide to the main folders:
 
 ---
 
-## 12. Deploying and operating the solution
+## 13. Deploying and operating the solution
 
 A typical release follows this order:
 
@@ -359,7 +378,7 @@ npm run lint
 
 ---
 
-## 13. What this architecture does — and does not — promise
+## 14. What this architecture does — and does not — promise
 
 **Designed to do**
 
@@ -383,7 +402,7 @@ The repository contains application code and integration points. Each external s
 
 ---
 
-## 14. The guiding principle
+## 15. The guiding principle
 
 **Research broadly. Explain clearly. Create originally. Review carefully. Publish deliberately.**
 
