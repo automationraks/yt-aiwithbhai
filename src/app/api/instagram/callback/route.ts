@@ -6,16 +6,106 @@ export const runtime = "nodejs";
 
 const version = () => process.env.META_GRAPH_VERSION || "v25.0";
 
+
 async function graph(path: string, params: Record<string, string>) {
-  const url = new URL(`https://graph.facebook.com/${version()}/${path}`);
-  Object.entries(params).forEach(([key, value]) => url.searchParams.set(key, value));
-  const response = await fetch(url, { cache: "no-store", signal: AbortSignal.timeout(20000) });
-  const data = await response.json().catch(() => ({}));
-  if (!response.ok) {
-    throw new Error(data?.error?.message || "Meta Graph API request failed.");
+  const endpoint = `https://graph.facebook.com/${version()}/${path}`;
+  const url = new URL(endpoint);
+
+  Object.entries(params).forEach(([key, value]) => {
+    url.searchParams.set(key, value);
+  });
+
+  let response: Response;
+
+  try {
+    response = await fetch(url, {
+      cache: "no-store",
+      signal: AbortSignal.timeout(20000),
+    });
+  } catch (error) {
+    const err = error as Error & {
+      cause?: {
+        code?: string;
+        syscall?: string;
+        hostname?: string;
+      };
+    };
+
+    console.error("[Instagram Graph API Network Failure]", {
+      endpoint,
+      errorName: err.name,
+      message: err.message,
+      cause: err.cause
+        ? {
+            code: err.cause.code,
+            syscall: err.cause.syscall,
+            hostname: err.cause.hostname,
+          }
+        : undefined,
+    });
+
+    throw new Error(
+      `Meta API network request failed at ${path}. ${
+        err.cause?.code || err.name || "Unknown network error"
+      }`
+    );
   }
+
+  let data: {
+    error?: {
+      message?: string;
+      type?: string;
+      code?: number;
+      error_subcode?: number;
+      fbtrace_id?: string;
+    };
+  } = {};
+
+  try {
+    data = await response.json() as typeof data;
+  } catch {
+    console.error("[Instagram Graph API Invalid Response]", {
+      endpoint,
+      status: response.status,
+      statusText: response.statusText,
+    });
+
+    throw new Error(
+      `Meta API returned an invalid response at ${path} (HTTP ${response.status}).`
+    );
+  }
+
+  if (!response.ok) {
+    const metaError = data?.error;
+
+    console.error("[Instagram Graph API Error]", {
+      endpoint,
+      status: response.status,
+      statusText: response.statusText,
+      metaError: {
+        message: metaError?.message,
+        type: metaError?.type,
+        code: metaError?.code,
+        error_subcode: metaError?.error_subcode,
+        fbtrace_id: metaError?.fbtrace_id,
+      },
+    });
+
+    throw new Error(
+      `Meta API error at ${path} (HTTP ${response.status}): ${
+        metaError?.message || "Unknown Meta API error"
+      }`
+    );
+  }
+
+  console.log("[Instagram Graph API Success]", {
+    endpoint,
+    status: response.status,
+  });
+
   return data;
 }
+
 
 export async function GET(req: NextRequest) {
   const destination = new URL("/instagram", req.url);
