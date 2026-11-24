@@ -2,22 +2,23 @@ import { NextResponse } from "next/server";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { generateResearchJson } from "@/lib/ai/research";
 export const runtime="nodejs";export const dynamic="force-dynamic";
-const system="You are a YouTube content strategist and senior AI systems engineer for AIWithBh@i. Audience: software engineers, architects and IT professionals. Focus on practical AI system design, LLM architecture, RAG, agents, model serving, production reliability, security, evaluation and enterprise use cases across retail, healthcare, airlines, banking, finance and logistics. Return JSON only: {ideas:[{title,hook,industry,topic,format,language,audience,problem,architectureAngle,outline:[...],differentiation,whyNow,opportunityScore,sourceVideoIds:[...],sourceInstagramIds:[...]}]}. Generate 6-10 original ideas, each citing at least one supplied shortlisted-channel video id. Use only supplied IDs. Never invent reference links or facts. Do not copy competitor titles; create distinct angles. Prefer case-study-first scenario explainers with architecture diagrams and trade-offs. Avoid generic news and shallow listicles. Score niche fit, usefulness, evidence quality, freshness and differentiation. Long videos by default, a few standalone Shorts if useful.";
+const system="You are a YouTube content strategist and senior AI systems engineer for AIWithBh@i. Audience: software engineers, architects and IT professionals. Focus on practical AI system design, LLM architecture, RAG, agents, model serving, production reliability, security, evaluation and enterprise use cases across retail, healthcare, airlines, banking, finance and logistics. Return JSON only: {ideas:[{title,hook,industry,topic,format,language,audience,problem,architectureAngle,outline:[...],differentiation,whyNow,opportunityScore,sourceVideoIds:[...],sourceInstagramIds:[...]}]}. Generate 6-10 original ideas, each citing at least one supplied YouTube video or Instagram post when relevant. Prefer using both platforms when both provide useful evidence. Use only supplied IDs. Never invent reference links or facts. Do not copy competitor titles; create distinct angles. Prefer case-study-first scenario explainers with architecture diagrams and trade-offs. Avoid generic news and shallow listicles. Score niche fit, usefulness, evidence quality, freshness and differentiation. Long videos by default, a few standalone Shorts if useful.";
 export async function GET(){
  const s=await createSupabaseServerClient();if(!s)return NextResponse.json({error:"Supabase is not configured."},{status:503});
  const {data:{user},error:a}=await s.auth.getUser();if(a||!user)return NextResponse.json({error:"Unauthorized."},{status:401});
  const {data:channels,error:ce}=await s.from("competitors").select("id").eq("owner_id",user.id).eq("is_active",true).eq("ai_production_status","qualified");
  if(ce)return NextResponse.json({error:"Could not load active shortlisted channels.",details:ce.message},{status:500});
  const channelIds=(channels??[]).map(x=>x.id);
- if(!channelIds.length)return NextResponse.json({ideas:[],activeSourceVideos:0});
- const {data:videos,error:ve}=await s.from("videos").select("youtube_video_id").eq("owner_id",user.id).eq("is_niche_relevant",true).in("competitor_id",channelIds.length?channelIds:["00000000-0000-0000-0000-000000000000"]);
+ const {data:videos,error:ve}=channelIds.length
+   ? await s.from("videos").select("youtube_video_id").eq("owner_id",user.id).eq("is_niche_relevant",true).in("competitor_id",channelIds)
+   : {data:[],error:null};
  if(ve)return NextResponse.json({error:"Could not verify active niche-matched source videos.",details:ve.message},{status:500});
  const activeVideoIds=new Set((videos??[]).map(x=>x.youtube_video_id));
  const {data:connection}=await s.from("instagram_connections").select("instagram_username").eq("owner_id",user.id).maybeSingle();
  const {data:trackedInstagram}=await s.from("manual_tracked_channels").select("url").eq("owner_id",user.id).eq("platform","instagram").eq("is_active",true);
  const activeHandles=new Set<string>([
    ...(connection?.instagram_username?[connection.instagram_username.toLowerCase()]:[]),
-   ...(trackedInstagram??[]).map(row=>{try{return new URL(row.url).pathname.split("/").filter(Boolean)[0]?.replace(/^@/,"").toLowerCase()??"";}catch{return "";}}),
+   ...(trackedInstagram??[]).map(row=>{try{const part=new URL(row.url).pathname.split("/").filter(Boolean)[0]??"";return ["p","reel","reels","tv","stories","explore"].includes(part.toLowerCase())?"":part.replace(/^@/,"").toLowerCase();}catch{return "";}}),
  ].filter(Boolean));
  const {data:instagramRows,error:ie}=activeHandles.size
    ? await s.from("instagram_content_sources").select("instagram_media_id,source_username,source_name,permalink,caption,timestamp,media_type,media_product_type,like_count,comments_count").eq("owner_id",user.id).in("source_username",[...activeHandles]).order("timestamp",{ascending:false}).limit(100)
