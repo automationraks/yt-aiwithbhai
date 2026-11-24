@@ -1,0 +1,130 @@
+{
+  "name": "AIWithBh@i - Daily Content Research",
+  "nodes": [
+    {
+      "id": "daily-webhook",
+      "name": "Daily research webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [
+        240,
+        300
+      ],
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "aiwithbhai-daily-research",
+        "authentication": "headerAuth",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "credentials": {
+        "httpHeaderAuth": {
+          "name": "AIWithBh@i Webhook Secret"
+        }
+      }
+    },
+    {
+      "id": "daily-validate",
+      "name": "Validate event",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        480,
+        300
+      ],
+      "parameters": {
+        "jsCode": "const event = $json.body ?? $json;\nif (event.event !== 'daily_content_research') throw new Error('Unexpected event type.');\nif (event.brand !== 'AIWithBh@i') throw new Error('Unexpected brand.');\nif (event.timezone !== 'Asia/Kolkata') throw new Error('Unexpected timezone.');\nreturn [{ json: { event } }];"
+      }
+    },
+    {
+      "id": "daily-run",
+      "name": "Generate and save research",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        760,
+        300
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "https://YOUR-VERCEL-DOMAIN.vercel.app/api/internal/daily-research",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "contentType": "raw",
+        "rawContentType": "application/json",
+        "body": "={{ JSON.stringify($json.event) }}",
+        "options": {
+          "timeout": 120000
+        }
+      },
+      "credentials": {
+        "httpHeaderAuth": {
+          "name": "AIWithBh@i Vercel Cron Bearer"
+        }
+      }
+    },
+    {
+      "id": "daily-response",
+      "name": "Respond with research result",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        1040,
+        300
+      ],
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ { ok: true, result: $json } }}",
+        "options": {
+          "responseCode": 200
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Daily research webhook": {
+      "main": [
+        [
+          {
+            "node": "Validate event",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validate event": {
+      "main": [
+        [
+          {
+            "node": "Generate and save research",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Generate and save research": {
+      "main": [
+        [
+          {
+            "node": "Respond with research result",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "saveManualExecutions": true
+  },
+  "pinData": {},
+  "meta": {
+    "templateCredsSetupCompleted": false
+  },
+  "tags": []
+}
