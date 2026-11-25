@@ -1,7 +1,7 @@
 export type AINewsSource = {
   id: string;
   name: string;
-  category: "Frontier models" | "AI hardware" | "Cloud AI" | "Open source" | "Research" | "Developer tools" | "Model ecosystems";
+  category: "Frontier models" | "AI hardware" | "Cloud AI" | "Open source" | "Research" | "Model ecosystems";
   feedUrl: string;
   homepage: string;
   priority: "core" | "community";
@@ -44,16 +44,10 @@ export const AI_NEWS_SOURCES: AINewsSource[] = [
   { id: "deepseek", name: "DeepSeek", category: "Open source", feedUrl: "https://github.com/deepseek-ai/DeepSeek-V3/releases.atom", homepage: "https://github.com/deepseek-ai", priority: "core" },
   { id: "qwen", name: "Qwen", category: "Open source", feedUrl: "https://github.com/QwenLM/Qwen3/releases.atom", homepage: "https://github.com/QwenLM", priority: "core" },
   { id: "llama", name: "Llama", category: "Open source", feedUrl: "https://github.com/meta-llama/llama-models/releases.atom", homepage: "https://github.com/meta-llama", priority: "core" },
-  { id: "vllm", name: "vLLM", category: "Developer tools", feedUrl: "https://github.com/vllm-project/vllm/releases.atom", homepage: "https://github.com/vllm-project/vllm", priority: "core" },
-  { id: "ollama", name: "Ollama", category: "Developer tools", feedUrl: "https://github.com/ollama/ollama/releases.atom", homepage: "https://github.com/ollama/ollama", priority: "community" },
-  { id: "langchain", name: "LangChain", category: "Developer tools", feedUrl: "https://blog.langchain.com/rss/", homepage: "https://blog.langchain.com/", priority: "community" },
-  { id: "llamaindex", name: "LlamaIndex", category: "Developer tools", feedUrl: "https://www.llamaindex.ai/blog", homepage: "https://www.llamaindex.ai/blog", priority: "community" },
-  { id: "crewai", name: "CrewAI", category: "Developer tools", feedUrl: "https://github.com/crewAIInc/crewAI/releases.atom", homepage: "https://www.crewai.com/", priority: "community" },
-  { id: "comfyui", name: "ComfyUI", category: "Developer tools", feedUrl: "https://github.com/comfyanonymous/ComfyUI/releases.atom", homepage: "https://www.comfy.org/", priority: "community" },
   { id: "arxiv", name: "arXiv · AI & ML", category: "Research", feedUrl: "https://rss.arxiv.org/rss/cs.AI", homepage: "https://arxiv.org/list/cs.AI/recent", priority: "core" },
   { id: "arxiv-ml", name: "arXiv · Machine Learning", category: "Research", feedUrl: "https://rss.arxiv.org/rss/cs.LG", homepage: "https://arxiv.org/list/cs.LG/recent", priority: "core" },
   { id: "arxiv-cl", name: "arXiv · NLP", category: "Research", feedUrl: "https://rss.arxiv.org/rss/cs.CL", homepage: "https://arxiv.org/list/cs.CL/recent", priority: "core" },
   { id: "arxiv-robotics", name: "arXiv · Robotics", category: "Research", feedUrl: "https://rss.arxiv.org/rss/cs.RO", homepage: "https://arxiv.org/list/cs.RO/recent", priority: "community" },
 ];
 
-export const AI_NEWS_CATEGORIES = ["All", "Frontier models", "AI hardware", "Cloud AI", "Open source", "Developer tools", "Research", "Model ecosystems"] as const;
+export const AI_NEWS_CATEGORIES = ["All", "Frontier models", "AI hardware", "Cloud AI", "Open source", "Research", "Model ecosystems"] as const;
