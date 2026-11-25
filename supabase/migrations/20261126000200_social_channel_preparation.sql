@@ -69,5 +69,5 @@ begin
  delete from public.social_research_queue_history where selected_at<now()-interval '30 days';
 end; $$;
 revoke all on function public.rotate_social_research_queue() from public,anon,authenticated;
-select cron.schedule('aiwithbhai-social-channel-preparation-every-10-minutes','*/10 * * * *','select public.rotate_social_research_queue();');
+select cron.unschedule(jobid) from cron.job where jobname='aiwithbhai-channel-preparation-every-10-minutes';\nselect cron.schedule('aiwithbhai-social-channel-preparation-every-10-minutes','*/10 * * * *','select public.rotate_social_research_queue();');
 select public.rotate_social_research_queue();
