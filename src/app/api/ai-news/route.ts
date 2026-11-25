@@ -90,7 +90,7 @@ export async function GET(req: NextRequest) {
     Math.max(1, Number(req.nextUrl.searchParams.get("days") || 14)),
   );
   const chosen = AI_NEWS_SOURCES.filter(
-    (source) => category === "All" || source.category === category,
+    (source) => source.category !== "Developer tools" && (category === "All" || source.category === category),
   );
 
   const results = await Promise.allSettled(
