@@ -111,7 +111,7 @@ export default function ChannelPreparationPage() {
             <div>
               <h2 className="text-sm font-semibold">Current selection</h2>
               <p className="mt-1 text-xs text-slate-500">
-                {data?.activeShortlistedChannels ?? "—"} saved shortlist videos
+                {data?.shortlistedVideos ?? data?.activeShortlistedChannels ?? "—"} saved shortlist videos
               </p>
             </div>
             <button onClick={() => void loadSelection()} disabled={loading} className="inline-flex items-center gap-2 rounded-lg border border-slate-700 px-3 py-2 text-xs text-slate-300 hover:bg-white/[.04] disabled:opacity-50">
