@@ -8,10 +8,10 @@ const eq=(a:string,b:string)=>{const x=Buffer.from(a),y=Buffer.from(b);return x.
 export async function POST(request:Request){
  const secret=process.env.N8N_WEBHOOK_SECRET;if(!secret||!eq(request.headers.get("authorization")??"","Bearer "+secret))return NextResponse.json({error:"Unauthorized"},{status:401});
  let b:QueueRequest;try{b=await request.json() as QueueRequest;}catch{return NextResponse.json({error:"Invalid JSON"},{status:400});}
- if(b.event!=="content_approved"||typeof b.ownerId!=="string"||typeof b.idea?.id!=="string"||typeof b.idea?.approvedScript!=="string"||typeof b.idea?.approvedScriptHash!=="string"||!Array.isArray(b.idea?.segments))return NextResponse.json({error:"Invalid approved-video event"},{status:400});
+ if(b.event!=="content_approved"||typeof b.ownerId!=="string"||typeof b.idea?.id!=="string"||typeof b.idea?.approvedScript!=="string"||typeof b.idea?.approvedScriptHash!=="string"||!Array.isArray(b.idea?.segments)||typeof b.callback?.url!=="string"||!b.storage||typeof b.storage!=="object")return NextResponse.json({error:"Invalid approved-video event"},{status:400});
  const requestIdea=b.idea!;
- const callbackUrl=b.callback!.url as string;
- const storage=b.storage!;
+ const callbackUrl=b.callback.url;
+ const storage=b.storage;
  const app=process.env.NEXT_PUBLIC_APP_URL?.replace(/\/$/,"");if(!app||callbackUrl!==app+"/api/video-production/complete")return NextResponse.json({error:"Invalid callback URL"},{status:400});
  const finalPath=b.ownerId+"/"+requestIdea.id+"/final.mp4";if(storage.bucket!=="generated-videos"||storage.private!==true||storage.finalPath!==finalPath)return NextResponse.json({error:"Invalid private storage destination"},{status:400});
  const hash=createHash("sha256").update(requestIdea.approvedScript,"utf8").digest("hex");if(!eq(hash,requestIdea.approvedScriptHash))return NextResponse.json({error:"Approved script hash mismatch"},{status:409});
