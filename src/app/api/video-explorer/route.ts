@@ -17,7 +17,7 @@ export async function GET(){
  const ids=(shortlists??[]).map(x=>x.social_video_id);let social:Record<string,unknown>[]=[];
  if(ids.length){const r=await db.from("social_videos").select("*").eq("owner_id",user.id).in("id",ids);if(r.error)return NextResponse.json({error:r.error.message},{status:500});social=(r.data??[]) as Record<string,unknown>[];}
  const byId=new Map(social.map(x=>[String(x.id),x]));
- const videos:ExplorerVideo[]=(shortlists??[]).flatMap(x=>{const v=byId.get(x.social_video_id);return v?[{...v,shortlist_id:x.id,source_feature:x.source_feature,shortlisted_at:x.shortlisted_at,platform:v.platform,channelTitle:v.source_channel_name??"Unknown channel",channelUrl:v.source_channel_url??null}]:[];});
+ const videos:ExplorerVideo[]=(shortlists??[]).flatMap(x=>{const v=byId.get(x.social_video_id);return v?[{...v,shortlist_id:x.id,source_feature:x.source_feature,shortlisted_at:x.shortlisted_at,platform:String(v.platform),external_video_id:String(v.external_video_id),channelTitle:v.source_channel_name??"Unknown channel",channelUrl:v.source_channel_url??null}]:[];});
  // Preserve historical YouTube research even if a channel is later unqualified or removed.
  const legacy=await db.from("videos").select("id,competitor_id,youtube_video_id,title,description,published_at,duration_seconds,view_count,like_count,comment_count,is_short,thumbnail_url,video_url,niche_relevance_score,niche_relevance_reason").eq("owner_id",user.id).eq("is_niche_relevant",true).order("published_at",{ascending:false}).limit(500);
  if(legacy.error)return NextResponse.json({error:"Could not load historical YouTube videos.",details:legacy.error.message},{status:500});
