@@ -52,8 +52,7 @@ export async function POST(request: Request) {
       video_production_status: "failed",
       video_verification: { stage: "render_failed", detail: String(body.error || "Rendering failed").slice(0, 1000) }
     }).eq("id", body.ideaId).eq("owner_id", body.ownerId);
-    await logWorkflowEvent({ownerId:body.ownerId,ideaId:body.ideaId,workflow:"video_production",eventKey:verified?"video_ready":"video_review_required",stage:verified?"production_completed":"review_required",status:verified?"completed":"review_required",message:verified?"Video passed transcript verification and is ready for owner review.":"Video requires owner review before publishing.",metadata:{transcriptMatchesApprovedScript:matches}});
-  await supabase.from("app_notifications").insert({
+    await supabase.from("app_notifications").insert({
       owner_id: body.ownerId, notification_type: "video_production_failed",
       title: "Video production failed",
       message: "The video could not be completed. Review the production details and retry.",
@@ -134,6 +133,7 @@ export async function POST(request: Request) {
   }).eq("id", body.ideaId).eq("owner_id", body.ownerId);
   if (updateError) return NextResponse.json({ error: "Could not save production result.", details: updateError.message }, { status: 500 });
 
+  await logWorkflowEvent({ownerId:body.ownerId,ideaId:body.ideaId,workflow:"video_production",eventKey:verified?"video_ready":"video_review_required",stage:verified?"production_completed":"review_required",status:verified?"completed":"review_required",message:verified?"Video passed transcript verification and is ready for owner review.":"Video requires owner review before publishing.",metadata:{transcriptMatchesApprovedScript:matches}});
   await supabase.from("app_notifications").insert({
     owner_id: body.ownerId,
     notification_type: verified ? "video_ready" : "video_transcript_mismatch",
