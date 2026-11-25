@@ -1,4 +1,4 @@
-import { createHash, randomBytes, scrypt as scryptCallback, timingSafeEqual } from "node:crypto";
+import { randomBytes, scrypt as scryptCallback, timingSafeEqual } from "node:crypto";
 import { promisify } from "node:util";
 import { NextRequest, NextResponse } from "next/server";
 import { APP_SESSION_COOKIE, APP_SESSION_MAX_AGE, createSupabaseAdminClient, hashSessionToken } from "@/lib/auth/session";
