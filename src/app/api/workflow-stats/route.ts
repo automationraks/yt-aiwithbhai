@@ -23,6 +23,8 @@ export async function GET() {
     stats: {
       totalIdeasSaved: ideas.length,
       generatedRuns: generationEvents.length,
+      totalGenerated: generationEvents.reduce((sum, event) => sum + Number(event.metadata?.generated ?? 0), 0),
+      duplicatesSkipped: generationEvents.reduce((sum, event) => sum + Math.max(0, Number(event.metadata?.generated ?? 0) - Number(event.metadata?.newlySaved ?? 0)), 0),
       generatedLast30Days: generationEvents.filter((event) => event.created_at >= since).reduce((sum, event) => sum + Number(event.metadata?.generated ?? 0), 0),
       approved: ideas.filter((idea) => idea.status === "approved" || ["queued", "processing", "ready"].includes(String(idea.video_production_status))).length,
       queued: ideas.filter((idea) => idea.video_production_status === "queued").length,
