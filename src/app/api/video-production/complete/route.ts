@@ -1,6 +1,7 @@
 import { createHash, timingSafeEqual } from "node:crypto";
 import { NextResponse } from "next/server";
 import { createSupabaseAdminClient } from "@/lib/auth/session";
+import { logWorkflowEvent } from "@/lib/workflow-events";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -46,11 +47,13 @@ export async function POST(request: Request) {
   if (error || !idea) return NextResponse.json({ error: "Production record not found." }, { status: 404 });
 
   if (body.status === "failed") {
+    await logWorkflowEvent({ownerId:body.ownerId,ideaId:body.ideaId,workflow:"video_production",eventKey:"render_failed",stage:"render_failed",status:"failed",message:"Local video rendering failed.",metadata:{error:String(body.error||"Rendering failed").slice(0,800)}});
     await supabase.from("content_ideas").update({
       video_production_status: "failed",
       video_verification: { stage: "render_failed", detail: String(body.error || "Rendering failed").slice(0, 1000) }
     }).eq("id", body.ideaId).eq("owner_id", body.ownerId);
-    await supabase.from("app_notifications").insert({
+    await logWorkflowEvent({ownerId:body.ownerId,ideaId:body.ideaId,workflow:"video_production",eventKey:verified?"video_ready":"video_review_required",stage:verified?"production_completed":"review_required",status:verified?"completed":"review_required",message:verified?"Video passed transcript verification and is ready for owner review.":"Video requires owner review before publishing.",metadata:{transcriptMatchesApprovedScript:matches}});
+  await supabase.from("app_notifications").insert({
       owner_id: body.ownerId, notification_type: "video_production_failed",
       title: "Video production failed",
       message: "The video could not be completed. Review the production details and retry.",
@@ -99,6 +102,7 @@ export async function POST(request: Request) {
     return NextResponse.json({ ok: false, status: "review_required", reason: "Segment sequence validation failed." }, { status: 409 });
   }
 
+  await logWorkflowEvent({ownerId:body.ownerId,ideaId:body.ideaId,workflow:"video_production",eventKey:"segments_uploaded",stage:"segments_uploaded",status:"completed",message:"All ordered video segments and final MP4 were uploaded; transcript verification started.",metadata:{segmentCount:receivedSegments.length,durationSeconds:Number(body.durationSeconds)||null}});
   const transcript = body.transcript;
   const matches = transcriptMatches(approvedScript, transcript);
   const { data: bucketFile } = await supabase.storage.from("generated-videos").list(
@@ -111,6 +115,7 @@ export async function POST(request: Request) {
 
   const verified = matches && safeEqual(expectedHash, body.scriptHash);
   const nextStatus = verified ? "ready" : "review_required";
+  await logWorkflowEvent({ownerId:body.ownerId,ideaId:body.ideaId,workflow:"video_production",eventKey:verified?"transcript_verified":"transcript_mismatch",stage:verified?"transcript_verified":"transcript_review_required",status:verified?"completed":"review_required",message:verified?"Final transcript exactly matches the approved narration.":"Final transcript differs from the approved narration; publishing remains blocked.",metadata:{segmentCount:expectedSegments.length,durationSeconds:Number(body.durationSeconds)||null}});
   const { error: updateError } = await supabase.from("content_ideas").update({
     video_production_status: nextStatus,
     video_transcript: transcript,
