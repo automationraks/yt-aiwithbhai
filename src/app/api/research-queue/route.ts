@@ -13,7 +13,7 @@ export async function GET(){
 }
 export async function POST(req:NextRequest){
  const db=await createSupabaseServerClient();if(!db)return NextResponse.json({error:"Supabase is not configured."},{status:503});
- const{data:{user},error:auth}=await db.auth.getUser();if(error||!user)return NextResponse.json({error:"Unauthorized."},{status:401});
+ const{data:{user},error:authError}=await db.auth.getUser();if(authError||!user)return NextResponse.json({error:"Unauthorized."},{status:401});
  let b:Record<string,unknown>;try{b=await req.json()}catch{return NextResponse.json({error:"Invalid JSON."},{status:400});}
  if(b.action!=="shortlist")return NextResponse.json({error:"Unsupported action."},{status:400});
  const{data:pick,error:pickError}=await db.from("social_research_queue_history").select("*").eq("owner_id",user.id).order("selected_at",{ascending:false}).limit(1).maybeSingle();
