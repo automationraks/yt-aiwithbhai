@@ -8,3 +8,6 @@ build
 .vercel
 *.log
 .DS_Store
+
+supabase/.temp/
+supabase/migrations_backup/
