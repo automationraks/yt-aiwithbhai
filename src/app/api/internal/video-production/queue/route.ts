@@ -3,7 +3,7 @@ import { NextResponse } from "next/server";
 import { createSupabaseAdminClient } from "@/lib/auth/session";
 export const runtime="nodejs";export const dynamic="force-dynamic";
 type SegmentPlan = { sequence: number; outputStoragePath: string; durationSeconds: number };
-type QueueRequest = { event?: unknown; ownerId?: unknown; idea?: { id?: unknown; approvedScript?: unknown; approvedScriptHash?: unknown; segments?: unknown; targetDurationSeconds?: unknown; title?: unknown }; callback?: { url?: unknown }; storage?: { bucket?: unknown; private?: unknown; finalPath?: unknown } };
+type QueueRequest = { event?: string; ownerId?: string; idea?: { id?: string; approvedScript?: string; approvedScriptHash?: string; segments?: SegmentPlan[]; targetDurationSeconds?: number; title?: string }; callback?: { url?: string }; storage?: { bucket?: string; private?: boolean; finalPath?: string } };
 const eq=(a:string,b:string)=>{const x=Buffer.from(a),y=Buffer.from(b);return x.length===y.length&&timingSafeEqual(x,y);};
 export async function POST(request:Request){
  const secret=process.env.N8N_WEBHOOK_SECRET;if(!secret||!eq(request.headers.get("authorization")??"","Bearer "+secret))return NextResponse.json({error:"Unauthorized"},{status:401});
