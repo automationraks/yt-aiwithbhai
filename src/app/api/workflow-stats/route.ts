@@ -23,7 +23,7 @@ export async function GET() {
     stats: {
       totalIdeasSaved: ideas.length,
       generatedRuns: generationEvents.length,
-      generatedLast30Days: generationEvents.filter((event) => event.created_at >= since).length,
+      generatedLast30Days: generationEvents.filter((event) => event.created_at >= since).reduce((sum, event) => sum + Number(event.metadata?.generated ?? 0), 0),
       approved: ideas.filter((idea) => idea.status === "approved" || ["queued", "processing", "ready"].includes(String(idea.video_production_status))).length,
       queued: ideas.filter((idea) => idea.video_production_status === "queued").length,
       processing: ideas.filter((idea) => idea.video_production_status === "processing").length,
