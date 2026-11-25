@@ -80,8 +80,8 @@ export default function ChannelPreparationPage() {
   return (
     <main className="min-h-screen bg-[#090d14] px-4 py-8 text-white md:px-8">
       <div className="mx-auto max-w-5xl">
-        <Link href="/" className="mb-7 inline-flex items-center gap-2 text-sm text-slate-400 hover:text-white">
-          <ArrowLeft size={16} /> Back to Studio
+        <Link href="/" className="mb-7 inline-flex items-center gap-2 rounded-lg border border-slate-700 bg-[#111925] px-3 py-2 text-sm font-medium text-slate-200 transition hover:border-cyan-500/50 hover:text-white">
+          <ArrowLeft size={16} /> Dashboard
         </Link>
 
         <div className="mb-7 flex flex-wrap items-start justify-between gap-4">
