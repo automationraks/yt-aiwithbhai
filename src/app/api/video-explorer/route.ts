@@ -45,11 +45,12 @@ export async function POST(req:NextRequest){
   if(!id||!permalink||!title)return NextResponse.json({error:"platform, externalVideoId, permalink and title are required."},{status:400});
  }else return NextResponse.json({error:"Unsupported action."},{status:400});
  if(id.length>200||!/^https?:\/\//i.test(permalink))return NextResponse.json({error:"Invalid video reference."},{status:400});
- const {data:video,error:videoError}=await db.from("social_videos").upsert({owner_id:user.id,platform,external_video_id:id,source_channel_id:channelId,source_channel_name:channelName,source_channel_url:channelUrl,title,description,permalink,thumbnail_url:thumbnail,published_at:publishedAt,is_custom_source:action==="add_manual_link",last_seen_at:new Date().toISOString()},{onConflict:"owner_id,platform,external_video_id"}).select("id").single();
+ const {data:video,error:videoError}=await db.from("social_videos").upsert({owner_id:user.id,platform,external_video_id:id,source_channel_id:channelId,source_channel_name:channelName,source_channel_url:channelUrl,title,description,permalink,thumbnail_url:thumbnail,published_at:publishedAt,...(action==="add_manual_link"?{is_custom_source:true}:{}),last_seen_at:new Date().toISOString()},{onConflict:"owner_id,platform,external_video_id"}).select("id").single();
  if(videoError||!video)return NextResponse.json({error:"Could not save video reference.",details:videoError?.message},{status:500});
  const sourceFeature=action==="add_manual_link"?"manual":(["instagram_discovery","channel_preparation","competitor_explorer"].includes(String(b.sourceFeature))?String(b.sourceFeature):"manual");
  const {data:shortlist,error:shortlistError}=await db.from("video_shortlists").upsert({owner_id:user.id,social_video_id:video.id,source_feature:sourceFeature},{onConflict:"owner_id,social_video_id",ignoreDuplicates:true}).select("id,shortlisted_at").maybeSingle();
  if(shortlistError)return NextResponse.json({error:"Video saved, but shortlist failed.",details:shortlistError.message},{status:500});
  const existing=shortlist??(await db.from("video_shortlists").select("id,shortlisted_at").eq("owner_id",user.id).eq("social_video_id",video.id).single()).data;
+ if(platform==="instagram"){await db.from("instagram_content_sources").update({content_status:"shortlisted"}).eq("owner_id",user.id).eq("instagram_media_id",id);}
  return NextResponse.json({ok:true,alreadyShortlisted:!shortlist,videoId:video.id,shortlist:existing});
 }

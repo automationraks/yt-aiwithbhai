@@ -9,7 +9,7 @@ export async function GET(){
  const{count}=await db.from("video_shortlists").select("id",{count:"exact",head:true}).eq("owner_id",user.id);
  const selection=data?{...data,isShortlisted:Boolean((await db.from("video_shortlists").select("id").eq("owner_id",user.id).eq("social_video_id",data.social_video_id??"00000000-0000-0000-0000-000000000000").maybeSingle()).data)}:null;
  const now=new Date(),next=new Date(now);next.setSeconds(0,0);next.setMinutes(Math.ceil((now.getMinutes()+1)/10)*10);
- return NextResponse.json({mode:"cloud",intervalMinutes:10,activeShortlistedChannels:count??0,selection,nextRefreshAt:next.toISOString(),message:selection?"A random stored shortlist video is selected every 10 minutes.":"No stored shortlist video is available yet. Add a YouTube or Instagram video to the Video Explorer shortlist."});
+ return NextResponse.json({mode:"cloud",intervalMinutes:10,activeShortlistedChannels:count??0,shortlistedVideos:count??0,selection,nextRefreshAt:next.toISOString(),message:selection?"A random stored shortlist video is selected every 10 minutes.":"No stored shortlist video is available yet. Add a YouTube or Instagram video to the Video Explorer shortlist."});
 }
 export async function POST(req:NextRequest){
  const db=await createSupabaseServerClient();if(!db)return NextResponse.json({error:"Supabase is not configured."},{status:503});
