@@ -4,35 +4,37 @@ import { decryptToken } from "@/lib/instagram/crypto";
 export const runtime="nodejs";export const dynamic="force-dynamic";
 const ver=()=>process.env.META_GRAPH_VERSION||"v25.0";
 async function meta(path:string,token:string,fields:string){const u=new URL("https://graph.facebook.com/"+ver()+"/"+path);u.searchParams.set("fields",fields);u.searchParams.set("access_token",token);const r=await fetch(u,{cache:"no-store",signal:AbortSignal.timeout(20000)});const d=await r.json().catch(()=>({}));if(!r.ok)throw new Error(d?.error?.message||"Instagram Business Discovery failed.");return d;}
-function handleFromUrl(value:string){try{const u=new URL(value);if(!["instagram.com","www.instagram.com","m.instagram.com"].includes(u.hostname.toLowerCase()))return null;const first=u.pathname.split("/").filter(Boolean)[0];return first&&!["p","reel","reels","tv","stories","explore"].includes(first.toLowerCase())?first.replace(/^@/,"").toLowerCase():null;}catch{return null;}}
-export async function GET(){const s=await createSupabaseServerClient();if(!s)return NextResponse.json({error:"Supabase is not configured."},{status:503});const {data:{user}}=await s.auth.getUser();if(!user)return NextResponse.json({error:"Unauthorized."},{status:401});const {data,error}=await s.from("instagram_content_sources").select("*").eq("owner_id",user.id).order("created_at",{ascending:false}).limit(100);if(error)return NextResponse.json({error:error.message},{status:500});return NextResponse.json({sources:data??[]});}
+function handleFromUrl(value:string){try{const u=new URL(value);if(!["instagram.com","www.instagram.com","m.instagram.com"].includes(u.hostname.toLowerCase()))return null;const first=u.pathname.split("/").filter(Boolean)[0];return first&&![ "p","reel","reels","tv","stories","explore"].includes(first.toLowerCase())?first.replace(/^@/,"").toLowerCase():null;}catch{return null;}}
+async function auth(){const s=await createSupabaseServerClient();if(!s)return{response:NextResponse.json({error:"Supabase is not configured."},{status:503})};const{data:{user}}=await s.auth.getUser();if(!user)return{response:NextResponse.json({error:"Unauthorized."},{status:401})};return{s,user};}
+async function addShortlistFlags(s:NonNullable<Awaited<ReturnType<typeof createSupabaseServerClient>>>,owner:string,sources:Record<string,unknown>[]){
+ const ids=sources.map(x=>String(x.instagram_media_id??"")).filter(Boolean);if(!ids.length)return sources.map(x=>({...x,is_shortlisted:false}));
+ const{data:videos}=await s.from("social_videos").select("id,external_video_id").eq("owner_id",owner).eq("platform","instagram").in("external_video_id",ids);
+ const socialIds=(videos??[]).map(x=>x.id);const{data:shorts}=socialIds.length?await s.from("video_shortlists").select("social_video_id").eq("owner_id",owner).in("social_video_id",socialIds):{data:[]};
+ const selected=new Set((shorts??[]).map(x=>x.social_video_id));
+ const byExternal=new Map((videos??[]).map(x=>[x.external_video_id,x.id]));
+ return sources.map(x=>({...x,is_shortlisted:selected.has(byExternal.get(String(x.instagram_media_id??""))??"")}));
+}
+export async function GET(){const a=await auth();if("response"in a)return a.response;const{s,user}=a;const{data,error}=await s.from("instagram_content_sources").select("*").eq("owner_id",user.id).order("created_at",{ascending:false}).limit(100);if(error)return NextResponse.json({error:error.message},{status:500});return NextResponse.json({sources:await addShortlistFlags(s,user.id,(data??[]) as Record<string,unknown>[])});}
 export async function POST(req:NextRequest){
- const s=await createSupabaseServerClient();if(!s)return NextResponse.json({error:"Supabase is not configured."},{status:503});const {data:{user}}=await s.auth.getUser();if(!user)return NextResponse.json({error:"Unauthorized."},{status:401});
+ const a=await auth();if("response"in a)return a.response;const{s,user}=a;
  let body:{username?:unknown};try{body=await req.json();}catch{return NextResponse.json({error:"Invalid JSON."},{status:400});}
  const requested=String(body.username??"").trim().replace(/^@/,"").toLowerCase();if(requested&&!/^[a-z0-9._]{1,30}$/.test(requested))return NextResponse.json({error:"Enter a valid Instagram username, without the @."},{status:400});
- const {data:connection,error:ce}=await s.from("instagram_connections").select("instagram_user_id,encrypted_page_access_token").eq("owner_id",user.id).maybeSingle();if(ce)return NextResponse.json({error:ce.message},{status:500});if(!connection)return NextResponse.json({error:"Connect your Instagram professional account first."},{status:409});
+ const{data:connection,error:ce}=await s.from("instagram_connections").select("instagram_user_id,encrypted_page_access_token").eq("owner_id",user.id).maybeSingle();if(ce)return NextResponse.json({error:ce.message},{status:500});if(!connection)return NextResponse.json({error:"Connect your Instagram professional account first."},{status:409});
  try{
-  const token=decryptToken(connection.encrypted_page_access_token);
-  const own=await meta(connection.instagram_user_id,token,"username");
-  const {data:manual,error:manualError}=await s.from("manual_tracked_channels").select("url,is_active").eq("owner_id",user.id).eq("platform","instagram").eq("is_active",true);
-  if(manualError)throw new Error("Could not load manually shortlisted Instagram profiles: "+manualError.message);
+  const token=decryptToken(connection.encrypted_page_access_token);const own=await meta(connection.instagram_user_id,token,"username");
+  const{data:manual,error:manualError}=await s.from("manual_tracked_channels").select("url,is_active").eq("owner_id",user.id).eq("platform","instagram").eq("is_active",true);if(manualError)throw new Error("Could not load manually shortlisted Instagram profiles: "+manualError.message);
   const handles=[...new Set([String(own.username||"").toLowerCase(),...(manual??[]).map(x=>handleFromUrl(x.url)).filter(Boolean),requested].filter(Boolean) as string[])].slice(0,20);
   if(!handles.length)return NextResponse.json({error:"No connected or manually shortlisted Instagram profiles were found."},{status:400});
   const outcomes:{username:string,saved:number,error?:string}[]=[];
-  for(const username of handles){
-   try{
-    const target=username===String(own.username).toLowerCase()?null:username;
-    const fields=target?("business_discovery.username("+target+"){username,name,biography,website,followers_count,media_count,media.limit(12){id,caption,media_type,media_product_type,permalink,thumbnail_url,timestamp,like_count,comments_count}}"):"username,name,biography,website,followers_count,media_count,media.limit(12){id,caption,media_type,media_product_type,permalink,thumbnail_url,timestamp,like_count,comments_count}";
-    const result=await meta(connection.instagram_user_id,token,fields);const profile=target?result.business_discovery:result;
-    if(!profile?.username)throw new Error("Meta could not access this profile. It must be public and eligible for Business Discovery.");
-    const media=profile.media?.data??[];
-    const rows=media.filter((m:{id?:string;permalink?:string})=>m.id&&m.permalink).map((m:{id:string;permalink:string;caption?:string;media_type?:string;media_product_type?:string;thumbnail_url?:string;timestamp?:string;like_count?:number;comments_count?:number})=>({owner_id:user.id,instagram_media_id:m.id,source_username:profile.username,source_name:profile.name??null,media_type:m.media_type??null,permalink:m.permalink,caption:m.caption??null,thumbnail_url:m.thumbnail_url??null,timestamp:m.timestamp??null,like_count:m.like_count??null,comments_count:m.comments_count??null,media_product_type:m.media_product_type??null}));
-    if(rows.length){const {error}=await s.from("instagram_content_sources").upsert(rows,{onConflict:"owner_id,instagram_media_id"});if(error)throw new Error("Could not save Instagram source posts: "+error.message);}
-    outcomes.push({username:profile.username,saved:rows.length});
-   }catch(e){outcomes.push({username,saved:0,error:e instanceof Error?e.message:"Discovery failed."});}
-  }
-  const {data:sources,error:loadError}=await s.from("instagram_content_sources").select("*").eq("owner_id",user.id).order("timestamp",{ascending:false}).limit(100);
-  if(loadError)throw new Error(loadError.message);
-  return NextResponse.json({outcomes,saved:outcomes.reduce((n,x)=>n+x.saved,0),sources:sources??[],note:"Connected account plus manually shortlisted Instagram profiles. Only metadata and permalinks returned by Meta are stored."});
+  for(const username of handles){try{
+   const target=username===String(own.username).toLowerCase()?null:username;
+   const fields=target?("business_discovery.username("+target+"){username,name,biography,website,followers_count,media_count,media.limit(5){id,caption,media_type,media_product_type,permalink,thumbnail_url,timestamp,like_count,comments_count}}"):"username,name,biography,website,followers_count,media_count,media.limit(5){id,caption,media_type,media_product_type,permalink,thumbnail_url,timestamp,like_count,comments_count}";
+   const result=await meta(connection.instagram_user_id,token,fields);const profile=target?result.business_discovery:result;if(!profile?.username)throw new Error("Meta could not access this profile. It must be public and eligible for Business Discovery.");
+   const media=profile.media?.data??[];const rows=media.filter((m:{id?:string;permalink?:string})=>m.id&&m.permalink).map((m:{id:string;permalink:string;caption?:string;media_type?:string;media_product_type?:string;thumbnail_url?:string;timestamp?:string;like_count?:number;comments_count?:number})=>({owner_id:user.id,instagram_media_id:m.id,source_username:profile.username,source_name:profile.name??null,media_type:m.media_type??null,permalink:m.permalink,caption:m.caption??null,thumbnail_url:m.thumbnail_url??null,timestamp:m.timestamp??null,like_count:m.like_count??null,comments_count:m.comments_count??null,media_product_type:m.media_product_type??null}));
+   if(rows.length){const{error}=await s.from("instagram_content_sources").upsert(rows,{onConflict:"owner_id,instagram_media_id"});if(error)throw new Error("Could not save Instagram source posts: "+error.message);}
+   outcomes.push({username:profile.username,saved:rows.length});
+  }catch(e){outcomes.push({username,saved:0,error:e instanceof Error?e.message:"Discovery failed."});}}
+  const{data:sources,error:loadError}=await s.from("instagram_content_sources").select("*").eq("owner_id",user.id).order("timestamp",{ascending:false}).limit(100);if(loadError)throw new Error(loadError.message);
+  return NextResponse.json({outcomes,saved:outcomes.reduce((n,x)=>n+x.saved,0),sources:await addShortlistFlags(s,user.id,(sources??[]) as Record<string,unknown>[]),note:"Latest five available media references per connected or manually tracked profile. Meta Business Discovery restrictions apply."});
  }catch(e){return NextResponse.json({error:e instanceof Error?e.message:"Instagram discovery failed."},{status:502});}
 }
