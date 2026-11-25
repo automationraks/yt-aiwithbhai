@@ -6,34 +6,11 @@ const system = `You are a YouTube content strategist and senior AI systems engin
 export async function GET(){
  const s=await createSupabaseServerClient();if(!s)return NextResponse.json({error:"Supabase is not configured."},{status:503});
  const {data:{user},error:a}=await s.auth.getUser();if(a||!user)return NextResponse.json({error:"Unauthorized."},{status:401});
- const {data:channels,error:ce}=await s.from("competitors").select("id").eq("owner_id",user.id).eq("is_active",true).eq("ai_production_status","qualified");
- if(ce)return NextResponse.json({error:"Could not load active shortlisted channels.",details:ce.message},{status:500});
- const channelIds=(channels??[]).map(x=>x.id);
- const {data:videos,error:ve}=channelIds.length
-   ? await s.from("videos").select("youtube_video_id").eq("owner_id",user.id).eq("is_niche_relevant",true).in("competitor_id",channelIds)
-   : {data:[],error:null};
- if(ve)return NextResponse.json({error:"Could not verify active niche-matched source videos.",details:ve.message},{status:500});
- const activeVideoIds=new Set((videos??[]).map(x=>x.youtube_video_id));
- const {data:connection}=await s.from("instagram_connections").select("instagram_username").eq("owner_id",user.id).maybeSingle();
- const {data:trackedInstagram}=await s.from("manual_tracked_channels").select("url").eq("owner_id",user.id).eq("platform","instagram").eq("is_active",true);
- const activeHandles=new Set<string>([
-   ...(connection?.instagram_username?[connection.instagram_username.toLowerCase()]:[]),
-   ...(trackedInstagram??[]).map(row=>{try{const part=new URL(row.url).pathname.split("/").filter(Boolean)[0]??"";return ["p","reel","reels","tv","stories","explore"].includes(part.toLowerCase())?"":part.replace(/^@/,"").toLowerCase();}catch{return "";}}),
- ].filter(Boolean));
- const {data:instagramRows,error:ie}=activeHandles.size
-   ? await s.from("instagram_content_sources").select("instagram_media_id,source_username,source_name,permalink,caption,timestamp,media_type,media_product_type,like_count,comments_count").eq("owner_id",user.id).in("source_username",[...activeHandles]).order("timestamp",{ascending:false}).limit(100)
-   : {data:[],error:null};
- if(ie)return NextResponse.json({error:"Could not load Instagram research sources.",details:ie.message},{status:500});
- const activeInstagramIds=new Set((instagramRows??[]).map(x=>x.instagram_media_id));
+ // Historical opportunities must remain visible even when their source channels/posts
+ // are later removed from the active shortlist or refreshed out of the current source set.
  const {data,error}=await s.from("content_ideas").select("*").eq("owner_id",user.id).order("created_at",{ascending:false}).limit(100);
  if(error)return NextResponse.json({error:"Could not load content opportunities.",details:error.message},{status:500});
- const ideas=(data??[]).filter(idea=>{
-   const videoMatch=Array.isArray(idea.source_video_ids)&&idea.source_video_ids.some((id:string)=>activeVideoIds.has(id));
-   const refs=Array.isArray(idea.source_references)?idea.source_references as Array<{platform?:string;mediaId?:string}>:[];
-   const instagramMatch=refs.some(ref=>ref.platform==="instagram"&&typeof ref.mediaId==="string"&&activeInstagramIds.has(ref.mediaId));
-   return videoMatch||instagramMatch;
- }).slice(0,60);
- return NextResponse.json({ideas,activeSourceVideos:activeVideoIds.size,activeInstagramPosts:activeInstagramIds.size});
+ return NextResponse.json({ideas:data??[]});
 }
 export async function POST(){
  const s=await createSupabaseServerClient();if(!s)return NextResponse.json({error:"Supabase is not configured."},{status:503});const {data:{user},error:a}=await s.auth.getUser();if(a||!user)return NextResponse.json({error:"Unauthorized."},{status:401});
