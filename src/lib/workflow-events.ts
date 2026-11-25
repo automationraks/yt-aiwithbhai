@@ -3,10 +3,10 @@ import { createSupabaseAdminClient } from "@/lib/auth/session";
 export type WorkflowEventInput = {
   ownerId: string;
   ideaId?: string | null;
-  workflow: "idea_generation" | "video_production";
+  workflow: "idea_generation" | "video_production" | "publishing";
   eventKey: string;
   stage: string;
-  status?: "started" | "completed" | "failed" | "skipped" | "review_required" | "queued" | "processing";
+  status?: "started" | "completed" | "failed" | "skipped" | "review_required" | "queued" | "processing" | "scheduled";
   message: string;
   metadata?: Record<string, unknown>;
 };
