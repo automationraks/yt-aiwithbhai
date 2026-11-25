@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { generateResearchJson } from "@/lib/ai/research";
+import { logWorkflowEvent } from "@/lib/workflow-events";
 export const runtime="nodejs";export const dynamic="force-dynamic";
 const system = `You are a YouTube content strategist and senior AI systems engineer for AIWithBh@i. Audience: software engineers, architects and IT professionals. Focus on practical AI system design, LLM architecture, RAG, agents, model serving, production reliability, security, evaluation and enterprise use cases across retail, healthcare, airlines, banking, finance and logistics. Return JSON only: {ideas:[{title,hook,industry,topic,format,language,audience,problem,architectureAngle,outline:[...],differentiation,whyNow,opportunityScore,sourceVideoIds:[...],sourceInstagramIds:[...],scriptPackage:{complexity,estimatedDurationSeconds,script,voiceover,scenes:[{startSeconds,endSeconds,visualPrompt,onScreenText}],instagramCaption,hashtags,youtubeTitle,youtubeDescription,videoStyle}}]}. Generate 6-10 original ideas, each citing at least one supplied YouTube video or Instagram post when relevant. Prefer using both platforms when both provide useful evidence. Use only supplied IDs. Never invent reference links or facts. Do not copy competitor titles; create distinct angles. Prefer case-study-first scenario explainers with architecture diagrams and trade-offs. Avoid generic news and shallow listicles. Score niche fit, usefulness, evidence quality, freshness and differentiation. Every idea must include a complete ready-to-produce vertical short package in scriptPackage: {complexity:"simple|medium|complex",estimatedDurationSeconds:integer,script:string,voiceover:string,scenes:[{startSeconds:number,endSeconds:number,visualPrompt:string,onScreenText:string}],instagramCaption:string,hashtags:string[],youtubeTitle:string,youtubeDescription:string,videoStyle:string}. The estimated duration must be 30-60 seconds: simple 30-40, medium 40-50, complex 50-60. Write narration at a natural pace that fits the selected duration; do not pad. Use a strong first 2-second hook, accurate facts, original scene prompts and a clear ending. Produce a single 9:16 video concept suitable for both YouTube Shorts and Instagram Reels. Long videos are not required.`;
 export async function GET(){
@@ -149,13 +150,16 @@ export async function PATCH(request:Request){
      });
      if(!response.ok){
        const detail=(await response.text()).slice(0,500);
+       await logWorkflowEvent({ownerId:user.id,ideaId:existing.id,workflow:"video_production",eventKey:"dispatch_failed",stage:"n8n_dispatch",status:"failed",message:"n8n rejected the production request.",metadata:{detail}});
        await s.from("content_ideas").update({video_production_status:"failed",video_verification:{stage:"dispatch_failed",detail}}).eq("id",existing.id).eq("owner_id",user.id);
        await s.from("app_notifications").insert({owner_id:user.id,notification_type:"video_production_failed",title:"Video production could not start",message:"The approved video could not be queued. Check the n8n production workflow configuration.",resource_type:"content_idea",resource_id:existing.id,metadata:{stage:"dispatch_failed"}});
        return NextResponse.json({error:"n8n rejected the production request.",details:detail},{status:502});
      }
+     await logWorkflowEvent({ownerId:user.id,ideaId:existing.id,workflow:"video_production",eventKey:"approval_queued",stage:"approved_and_queued",status:"queued",message:"Owner approved the frozen script; video production was dispatched to n8n.",metadata:{segments:segments.length,scriptHash}});
      return NextResponse.json({idea:locked,productionDispatch:"queued",segments:segments.length});
    }catch(error){
      const detail=error instanceof Error?error.message:"Production dispatch failed.";
+     await logWorkflowEvent({ownerId:user.id,ideaId:existing.id,workflow:"video_production",eventKey:"dispatch_failed",stage:"n8n_dispatch",status:"failed",message:"Could not dispatch video production.",metadata:{detail}});
      await s.from("content_ideas").update({video_production_status:"failed",video_verification:{stage:"dispatch_failed",detail}}).eq("id",existing.id).eq("owner_id",user.id);
      await s.from("app_notifications").insert({owner_id:user.id,notification_type:"video_production_failed",title:"Video production could not start",message:"The approved video could not be queued. Check the n8n production workflow configuration.",resource_type:"content_idea",resource_id:existing.id,metadata:{stage:"dispatch_failed"}});
      return NextResponse.json({error:"Could not dispatch video production.",details:detail},{status:502});
@@ -164,5 +168,6 @@ export async function PATCH(request:Request){
  const {data,error}=await s.from("content_ideas").update({status:body.status}).eq("id",body.id).eq("owner_id",user.id).select("*").maybeSingle();
  if(error)return NextResponse.json({error:"Could not update status.",details:error.message},{status:500});
  if(!data)return NextResponse.json({error:"Idea not found."},{status:404});
+ await logWorkflowEvent({ownerId:user.id,ideaId:data.id,workflow:"video_production",eventKey:"approval_status_changed",stage:body.status==="rejected"?"rejected":"approval_status_updated",status:"completed",message:"Owner changed the content approval status to "+body.status+".",metadata:{approvalStatus:body.status}});
  return NextResponse.json({idea:data,productionDispatch:"not_requested"});
 }
