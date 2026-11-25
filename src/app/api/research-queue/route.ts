@@ -21,6 +21,6 @@ export async function POST(req:NextRequest){
  const{data:video,error:videoError}=await db.from("social_videos").upsert({owner_id:user.id,platform:pick.platform,external_video_id:pick.video_id,source_channel_id:pick.channel_id,source_channel_name:pick.channel_title,source_channel_url:pick.channel_url,title:pick.video_title,permalink:pick.video_url,thumbnail_url:pick.thumbnail_url,is_custom_source:false,last_seen_at:new Date().toISOString()},{onConflict:"owner_id,platform,external_video_id"}).select("id").single();
  if(videoError||!video)return NextResponse.json({error:"Could not save selected video.",details:videoError?.message},{status:500});
  const{data:row,error}=await db.from("video_shortlists").upsert({owner_id:user.id,social_video_id:video.id,source_feature:"channel_preparation"},{onConflict:"owner_id,social_video_id",ignoreDuplicates:true}).select("id").maybeSingle();
- if(error)return NextResponse.json({error:error.message},{status:500});
+ if(error)return NextResponse.json({error:"Could not save shortlist."},{status:500});
  return NextResponse.json({ok:true,alreadyShortlisted:!row,shortlist:row});
 }
