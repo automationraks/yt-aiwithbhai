@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { createSupabaseAdminClient } from "@/lib/auth/session";
 import { generateResearchJson } from "@/lib/ai/research";
+import { logWorkflowEvent } from "@/lib/workflow-events";
 export const runtime="nodejs"; export const dynamic="force-dynamic"; export const maxDuration=60;
 type ResearchScene = { startSeconds?: unknown; endSeconds?: unknown; visualPrompt?: unknown; onScreenText?: unknown };
 type ResearchIdea = {
@@ -51,7 +52,8 @@ export async function POST(request:Request){
   }).filter(x=>x.title&&x.idea_key&&(x.source_video_ids.length>0||x.source_references.some(r=>r.platform==="instagram"))&&x.script_package.voiceover.length>40&&x.script_package.scenes.length);
   if(!prepared.length)return NextResponse.json({error:"AI returned no valid source-backed video packages"},{status:502});
   const {data:saved,error}=await db.from("content_ideas").upsert(prepared,{onConflict:"owner_id,idea_key",ignoreDuplicates:true}).select("id,title");
-  if(error)return NextResponse.json({error:error.message},{status:500});
+  if(error){await logWorkflowEvent({ownerId,workflow:"idea_generation",eventKey:"generation_save_failed",stage:"save_ideas",status:"failed",message:"Generated ideas could not be saved.",metadata:{error:error.message}});return NextResponse.json({error:error.message},{status:500});}
+  await logWorkflowEvent({ownerId,workflow:"idea_generation",eventKey:"generation_completed",stage:"generation_completed",status:"completed",message:"Daily research generated and saved video idea packages.",metadata:{generated:prepared.length,newlySaved:saved?.length??0,provider:result.provider,fallbackUsed:result.fallbackUsed,youtubeSources:sources.length,instagramSources:instagramPosts.length}});
   return NextResponse.json({ok:true,generated:prepared.length,newlySaved:saved?.length??0,provider:result.provider,fallbackUsed:result.fallbackUsed,sourceVideosUsed:sources.length,instagramPostsUsed:instagramPosts.length,timezone:"Asia/Kolkata"});
  }catch(e){return NextResponse.json({error:e instanceof Error?e.message:"Research failed"},{status:502});}
 }
