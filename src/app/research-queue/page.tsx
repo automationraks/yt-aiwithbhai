@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
-import { ArrowLeft, Clock3, ExternalLink, RefreshCw, Video } from "lucide-react";
+import { ArrowLeft, Clock3, ExternalLink, RefreshCw, Video, CheckCircle2 } from "lucide-react";
 
 type Selection = {
   id: string;
@@ -15,6 +15,9 @@ type Selection = {
   video_url: string;
   thumbnail_url: string | null;
   selected_at: string;
+  platform?: "youtube"|"instagram";
+  social_video_id?: string|null;
+  isShortlisted?: boolean;
 };
 
 type QueueResponse = {
@@ -47,6 +50,8 @@ export default function ChannelPreparationPage() {
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(true);
   const [now, setNow] = useState(Date.now());
+  const [shortlisting,setShortlisting]=useState(false);
+  const [notice,setNotice]=useState("");
 
   const loadSelection = useCallback(async () => {
     try {
@@ -75,6 +80,7 @@ export default function ChannelPreparationPage() {
     };
   }, [loadSelection]);
 
+  async function shortlistSelection(){if(!selection)return;setShortlisting(true);setNotice("");setError("");try{const response=await fetch("/api/research-queue",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({action:"shortlist"})});const result=await response.json();if(!response.ok)throw new Error(result.error||"Could not shortlist video.");setNotice(result.alreadyShortlisted?"This video is already in Video Explorer.":"Added to Video Explorer shortlist.");await loadSelection();}catch(e){setError(e instanceof Error?e.message:"Could not shortlist video.");}finally{setShortlisting(false);}}
   const selection = data?.selection ?? null;
 
   return (
@@ -98,13 +104,14 @@ export default function ChannelPreparationPage() {
         </div>
 
         {error && <div className="mb-5 rounded-lg border border-red-500/30 bg-red-500/10 p-3 text-sm text-red-300">{error}</div>}
+        {notice && <div className="mb-5 rounded-lg border border-emerald-500/20 bg-emerald-500/10 p-3 text-sm text-emerald-300">{notice}</div>}
 
         <section className="rounded-2xl border border-slate-800 bg-[#111925] p-5 md:p-7">
           <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
             <div>
               <h2 className="text-sm font-semibold">Current selection</h2>
               <p className="mt-1 text-xs text-slate-500">
-                {data?.activeShortlistedChannels ?? "—"} active qualified channels in shortlist
+                {data?.activeShortlistedChannels ?? "—"} saved shortlist videos
               </p>
             </div>
             <button onClick={() => void loadSelection()} disabled={loading} className="inline-flex items-center gap-2 rounded-lg border border-slate-700 px-3 py-2 text-xs text-slate-300 hover:bg-white/[.04] disabled:opacity-50">
@@ -131,6 +138,7 @@ export default function ChannelPreparationPage() {
                   <a href={selection.video_url} target="_blank" rel="noreferrer" className="inline-flex items-center gap-2 rounded-lg bg-cyan-500 px-4 py-2.5 text-sm font-semibold text-slate-950 hover:bg-cyan-400">
                     Open video manually <ExternalLink size={15} />
                   </a>
+                  <button onClick={()=>void shortlistSelection()} disabled={shortlisting||selection.isShortlisted} className="inline-flex items-center gap-2 rounded-lg border border-cyan-500/40 px-4 py-2.5 text-sm font-semibold text-cyan-200 disabled:opacity-50">{shortlisting?<RefreshCw size={14} className="animate-spin"/>:selection.isShortlisted?<CheckCircle2 size={14}/>:<Video size={14}/>} {selection.isShortlisted?"Shortlisted":"Shortlist video"}</button>
                   {selection.channel_url && (
                     <a href={selection.channel_url} target="_blank" rel="noreferrer" className="inline-flex items-center gap-2 rounded-lg border border-slate-700 px-4 py-2.5 text-sm text-slate-300 hover:bg-white/[.04]">
                       Open channel <ExternalLink size={14} />
