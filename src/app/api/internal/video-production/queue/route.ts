@@ -4,12 +4,30 @@ import { createSupabaseAdminClient } from "@/lib/auth/session";
 export const runtime="nodejs";export const dynamic="force-dynamic";
 type SegmentPlan = { sequence: number; outputStoragePath: string; durationSeconds: number };
 type QueueRequest = { event?: string; ownerId?: string; idea?: { id?: string; approvedScript?: string; approvedScriptHash?: string; segments?: SegmentPlan[]; targetDurationSeconds?: number; title?: string }; callback?: { url?: string }; storage?: { bucket?: string; private?: boolean; finalPath?: string } };
+type ValidQueueRequest = {
+ event:"content_approved";
+ ownerId:string;
+ idea:{id:string;approvedScript:string;approvedScriptHash:string;segments:SegmentPlan[];targetDurationSeconds?:number;title?:string};
+ callback:{url:string};
+ storage:{bucket:string;private:boolean;finalPath:string};
+};
 const eq=(a:string,b:string)=>{const x=Buffer.from(a),y=Buffer.from(b);return x.length===y.length&&timingSafeEqual(x,y);};
+const isValidQueueRequest=(value:QueueRequest):value is ValidQueueRequest =>
+ value.event==="content_approved" &&
+ typeof value.ownerId==="string" &&
+ typeof value.idea?.id==="string" &&
+ typeof value.idea.approvedScript==="string" &&
+ typeof value.idea.approvedScriptHash==="string" &&
+ Array.isArray(value.idea.segments) &&
+ typeof value.callback?.url==="string" &&
+ typeof value.storage?.bucket==="string" &&
+ typeof value.storage.private==="boolean" &&
+ typeof value.storage.finalPath==="string";
 export async function POST(request:Request){
  const secret=process.env.N8N_WEBHOOK_SECRET;if(!secret||!eq(request.headers.get("authorization")??"","Bearer "+secret))return NextResponse.json({error:"Unauthorized"},{status:401});
  let b:QueueRequest;try{b=await request.json() as QueueRequest;}catch{return NextResponse.json({error:"Invalid JSON"},{status:400});}
- if(b.event!=="content_approved"||typeof b.ownerId!=="string"||typeof b.idea?.id!=="string"||typeof b.idea?.approvedScript!=="string"||typeof b.idea?.approvedScriptHash!=="string"||!Array.isArray(b.idea?.segments)||typeof b.callback?.url!=="string"||!b.storage||typeof b.storage!=="object")return NextResponse.json({error:"Invalid approved-video event"},{status:400});
- const requestIdea=b.idea!;
+ if(!isValidQueueRequest(b))return NextResponse.json({error:"Invalid approved-video event"},{status:400});
+ const requestIdea=b.idea;
  const callbackUrl=b.callback.url;
  const storage=b.storage;
  const app=process.env.NEXT_PUBLIC_APP_URL?.replace(/\/$/,"");if(!app||callbackUrl!==app+"/api/video-production/complete")return NextResponse.json({error:"Invalid callback URL"},{status:400});
