@@ -9,7 +9,7 @@ export async function GET(){
  const {data:{user},error:a}=await s.auth.getUser();if(a||!user)return NextResponse.json({error:"Unauthorized."},{status:401});
  // Historical opportunities must remain visible even when their source channels/posts
  // are later removed from the active shortlist or refreshed out of the current source set.
- const {data,error}=await s.from("content_ideas").select("*").eq("owner_id",user.id).order("created_at",{ascending:false}).limit(100);
+ const {data,error}=await s.from("content_ideas").select("*").eq("owner_id",user.id).is("deleted_at",null).order("created_at",{ascending:false}).limit(100);
  if(error)return NextResponse.json({error:"Could not load content opportunities.",details:error.message},{status:500});
  return NextResponse.json({ideas:data??[]});
 }
@@ -56,11 +56,14 @@ export async function PATCH(request:Request){
  if(!s)return NextResponse.json({error:"Supabase is not configured."},{status:503});
  const {data:{user},error:a}=await s.auth.getUser();
  if(a||!user)return NextResponse.json({error:"Unauthorized."},{status:401});
- let body:{id?:unknown;status?:unknown};
+ let body:{id?:unknown;status?:unknown;action?:unknown;comments?:unknown};
  try{body=await request.json();}catch{return NextResponse.json({error:"Invalid JSON."},{status:400});}
+ const action=String(body.action??"");
+ if(typeof body.id!=="string")return NextResponse.json({error:"Provide an idea id."},{status:400});
+ if(action==="decline"){const{data,error}=await s.from("content_ideas").update({status:"rejected",deleted_at:new Date().toISOString()}).eq("id",body.id).eq("owner_id",user.id).is("deleted_at",null).select("id").maybeSingle();if(error)return NextResponse.json({error:error.message},{status:500});if(!data)return NextResponse.json({error:"Idea not found."},{status:404});await logWorkflowEvent({ownerId:user.id,ideaId:body.id,workflow:"idea_generation",eventKey:"idea_declined",stage:"declined",status:"completed",message:"Owner declined and archived a content idea.",metadata:{softDeleted:true}});return NextResponse.json({ok:true,deleted:true});}
+ if(action==="regenerate"){const{data:idea,error}=await s.from("content_ideas").select("*").eq("id",body.id).eq("owner_id",user.id).is("deleted_at",null).maybeSingle();if(error||!idea)return NextResponse.json({error:"Idea not found.",details:error?.message},{status:404});if(idea.status==="approved"||["queued","processing","ready"].includes(String(idea.video_production_status)))return NextResponse.json({error:"Approved or queued ideas cannot be regenerated."},{status:409});const comments=String(body.comments??"").trim().slice(0,2000);if(!comments)return NextResponse.json({error:"Add regeneration comments first."},{status:400});try{const generated=await generateResearchJson("You write original 40-59 second Indian English technical Shorts scripts for software engineers. Return JSON only: {script,voiceover,estimatedDurationSeconds,scenes:[{visualPrompt,onScreenText,audioDirection}]}. Make exactly sequential 7-second frames except the final remainder. Include strong hook, technical clarity, payoff, CTA and vertical 9:16 visual direction.",JSON.stringify({title:idea.title,hook:idea.hook,topic:idea.topic,existingScript:idea.script_package?.script,existingScenes:idea.script_package?.scenes,ownerFeedback:comments}));const pkg=generated.data as Record<string,unknown>;const duration=Math.max(40,Math.min(59,Math.round(Number(pkg.estimatedDurationSeconds)||Number(idea.target_duration_seconds)||45)));const voiceover=String(pkg.voiceover??pkg.script??"").trim();const words=voiceover.split(/\\s+/).filter(Boolean);const raw=Array.isArray(pkg.scenes)?pkg.scenes as Array<Record<string,unknown>>:[];const count=Math.ceil(duration/7);const scenes=Array.from({length:count},(_,i)=>{const from=Math.floor(i*words.length/count),to=Math.floor((i+1)*words.length/count),src=raw[i]??{};return{startSeconds:i*7,endSeconds:Math.min(duration,(i+1)*7),narration:words.slice(from,to).join(" "),visualPrompt:String(src.visualPrompt??"Technically accurate visual for this narration"),onScreenText:String(src.onScreenText??""),audioDirection:String(src.audioDirection??"Indian English narration, clear pronunciation")};});if(!voiceover)return NextResponse.json({error:"AI returned an empty narration. Retry."},{status:502});const script_package={...idea.script_package,script:String(pkg.script??voiceover),voiceover,estimatedDurationSeconds:duration,scenes};const{data:updated,error:updateError}=await s.from("content_ideas").update({script_package,target_duration_seconds:duration}).eq("id",idea.id).eq("owner_id",user.id).select("*").single();if(updateError)return NextResponse.json({error:updateError.message},{status:500});await s.from("ai_usage_logs").insert({owner_id:user.id,idea_id:idea.id,task:"content_idea_regeneration",provider:generated.provider,model:generated.model,input_tokens:generated.usage.inputTokens,output_tokens:generated.usage.outputTokens,total_tokens:generated.usage.totalTokens,estimated_cost_usd:generated.usage.estimatedCostUsd,cost_is_estimate:true,fallback_used:generated.fallbackUsed,duration_ms:generated.usage.durationMs,metadata:{comments}});await logWorkflowEvent({ownerId:user.id,ideaId:idea.id,workflow:"idea_generation",eventKey:"idea_regenerated",stage:"regenerated",status:"completed",message:"Script regenerated using owner feedback.",metadata:{provider:generated.provider,model:generated.model}});return NextResponse.json({idea:updated,provider:generated.provider,model:generated.model});}catch(e){return NextResponse.json({error:e instanceof Error?e.message:"Regeneration failed."},{status:502});}}
  const allowed=["idea","planned","approved","producing","published","rejected"];
- if(typeof body.id!=="string"||typeof body.status!=="string"||!allowed.includes(body.status))
-   return NextResponse.json({error:"Provide a valid idea id and status."},{status:400});
+ if(typeof body.status!=="string"||!allowed.includes(body.status))return NextResponse.json({error:"Provide a valid status or action."},{status:400});
  const {data:existing,error:readError}=await s.from("content_ideas").select("*").eq("id",body.id).eq("owner_id",user.id).maybeSingle();
  if(readError)return NextResponse.json({error:"Could not load idea.",details:readError.message},{status:500});
  if(!existing)return NextResponse.json({error:"Idea not found."},{status:404});
@@ -73,7 +76,7 @@ export async function PATCH(request:Request){
    if(!webhook)return NextResponse.json({error:"Video production is not configured. Add N8N_VIDEO_PRODUCTION_WEBHOOK_URL in Vercel."},{status:503});
    const {createHash}=await import("node:crypto");
    const scriptHash=createHash("sha256").update(approvedScript,"utf8").digest("hex");
-   const duration=Math.max(30,Math.min(60,Number(existing.target_duration_seconds)||35));
+   const duration=Math.max(40,Math.min(59,Number(existing.target_duration_seconds)||45));
    const words=approvedScript.split(/\s+/).filter(Boolean);
    const segmentCount=Math.ceil(duration/7);
    const scenes=Array.isArray(existing.script_package?.scenes)?existing.script_package.scenes:[];
