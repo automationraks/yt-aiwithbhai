@@ -24,6 +24,7 @@ type QueueResponse = {
   mode?: string;
   intervalMinutes?: number;
   activeShortlistedChannels?: number;
+  shortlistedVideos?: number;
   selection?: Selection | null;
   nextRefreshAt?: string | null;
   message?: string;
