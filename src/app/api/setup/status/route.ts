@@ -20,7 +20,7 @@ export async function GET() {
       { id: "supabase", title: "Create Supabase project", ready: !profile.error, detail: !profile.error ? "Database and authenticated session responding" : "Database query failed" },
       { id: "ai", title: "Add AI provider keys", ready: ai.configured, detail: ai.configured ? `Available: ${ai.available.join(", ")}` : "Add GEMINI_API_KEY or GROQ_API_KEY to server environment" },
       { id: "youtube", title: "Connect YouTube Data API", ready: Boolean(process.env.YOUTUBE_API_KEY), detail: process.env.YOUTUBE_API_KEY ? "Server API key is configured" : "Add YOUTUBE_API_KEY to server environment" },
-      { id: "n8n", title: "Configure n8n Cloud", ready: Boolean(process.env.N8N_BASE_URL && process.env.N8N_WEBHOOK_SECRET), detail: process.env.N8N_BASE_URL && process.env.N8N_WEBHOOK_SECRET ? "Webhook credentials configured (live workflow test pending)" : "Add N8N_BASE_URL and N8N_WEBHOOK_SECRET" },
+      { id: "n8n", title: "Configure n8n Cloud", ready: Boolean(process.env.N8N_BASE_URL && process.env.N8N_WEBHOOK_SECRET), detail: process.env.N8N_BASE_URL && process.env.N8N_WEBHOOK_SECRET ? "n8n Cloud webhook URL and credentials are configured" : "Add N8N_BASE_URL and N8N_WEBHOOK_SECRET" },
       { id: "keywords", title: "Set channel research keywords", ready: !keywords.error && (keywords.count ?? 0) > 0, detail: keywords.error ? "Could not read keyword library" : `${keywords.count ?? 0} active saved keywords` },
     ],
     ai: { primary: ai.primary, available: ai.available, fallback: ai.fallback },
