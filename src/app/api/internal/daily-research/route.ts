@@ -32,7 +32,7 @@ export async function POST(request:Request){
  ].filter(Boolean));
  const {data:instagramRows,error:instagramError}=handles.size?await db.from("instagram_content_sources").select("instagram_media_id,source_username,source_name,permalink,caption,timestamp,media_type,media_product_type,like_count,comments_count").eq("owner_id",ownerId).in("source_username",[...handles]).order("timestamp",{ascending:false}).limit(80):{data:[],error:null};
  if(instagramError)return NextResponse.json({error:instagramError.message},{status:500});
- const instagramPosts:InstagramReference[]=(instagramRows??[]).map(p=>({mediaId:p.instagram_media_id,username:p.source_username,title:(p.caption??"").slice(0,160)||("Instagram post by @"+p.source_username),caption:(p.caption??"").slice(0,800),url:p.permalink,publishedAt:p.timestamp,mediaType:p.media_type,productType:p.media_product_type,likes:p.like_count,comments:p.comments_count}));
+ const instagramPosts:InstagramReference[]=(instagramRows??[]).map(p=>({platform:"instagram",mediaId:p.instagram_media_id,username:p.source_username,channel:"@"+p.source_username,views:null,title:(p.caption??"").slice(0,160)||("Instagram post by @"+p.source_username),caption:(p.caption??"").slice(0,800),url:p.permalink,publishedAt:p.timestamp,mediaType:p.media_type,productType:p.media_product_type,likes:p.like_count,comments:p.comments_count}));
  const channelMap=new Map((channels??[]).map(x=>[x.id,x.channel_title]));
  const sources=videos.map(v=>({videoId:v.youtube_video_id,title:v.title,description:(v.description??"").slice(0,500),publishedAt:v.published_at,views:v.view_count,url:v.video_url??"https://www.youtube.com/watch?v="+v.youtube_video_id,channel:channelMap.get(v.competitor_id)??"Qualified channel"}));
  try{
