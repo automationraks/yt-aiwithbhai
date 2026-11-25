@@ -1,6 +1,7 @@
 import { NextRequest,NextResponse } from "next/server";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 export const dynamic="force-dynamic";
+type ExplorerVideo={ [key:string]:unknown; platform:string; external_video_id:string; view_count?:unknown; like_count?:unknown; comment_count?:unknown; };
 type Platform="youtube"|"instagram";
 function parseVideoUrl(raw:string):{platform:Platform;id:string;url:string}|null{
  try{const u=new URL(raw);if(!["https:","http:"].includes(u.protocol))return null;const host=u.hostname.toLowerCase().replace(/^www\./,"");
@@ -16,13 +17,13 @@ export async function GET(){
  const ids=(shortlists??[]).map(x=>x.social_video_id);let social:Record<string,unknown>[]=[];
  if(ids.length){const r=await db.from("social_videos").select("*").eq("owner_id",user.id).in("id",ids);if(r.error)return NextResponse.json({error:r.error.message},{status:500});social=(r.data??[]) as Record<string,unknown>[];}
  const byId=new Map(social.map(x=>[String(x.id),x]));
- const videos:any[]=(shortlists??[]).flatMap(x=>{const v=byId.get(x.social_video_id);return v?[{...v,shortlist_id:x.id,source_feature:x.source_feature,shortlisted_at:x.shortlisted_at,platform:v.platform,channelTitle:v.source_channel_name??"Unknown channel",channelUrl:v.source_channel_url??null}]:[];});
+ const videos:ExplorerVideo[]=(shortlists??[]).flatMap(x=>{const v=byId.get(x.social_video_id);return v?[{...v,shortlist_id:x.id,source_feature:x.source_feature,shortlisted_at:x.shortlisted_at,platform:v.platform,channelTitle:v.source_channel_name??"Unknown channel",channelUrl:v.source_channel_url??null}]:[];});
  // Preserve historical YouTube research even if a channel is later unqualified or removed.
  const legacy=await db.from("videos").select("id,competitor_id,youtube_video_id,title,description,published_at,duration_seconds,view_count,like_count,comment_count,is_short,thumbnail_url,video_url,niche_relevance_score,niche_relevance_reason").eq("owner_id",user.id).eq("is_niche_relevant",true).order("published_at",{ascending:false}).limit(500);
  if(legacy.error)return NextResponse.json({error:"Could not load historical YouTube videos.",details:legacy.error.message},{status:500});
  const channels=await db.from("competitors").select("id,channel_title,channel_url").eq("owner_id",user.id);
  const channelMap=new Map((channels.data??[]).map(x=>[x.id,x]));
- const historical:any[]=(legacy.data??[]).map(v=>{const c=channelMap.get(v.competitor_id??"");return{...v,platform:"youtube",external_video_id:v.youtube_video_id,permalink:v.video_url,source_feature:"historical_research",is_shortlisted:false,channelTitle:c?.channel_title??"Previously tracked channel",channelUrl:c?.channel_url??null};});
+ const historical:ExplorerVideo[]=(legacy.data??[]).map(v=>{const c=channelMap.get(v.competitor_id??"");return{...v,platform:"youtube",external_video_id:v.youtube_video_id,permalink:v.video_url,source_feature:"historical_research",is_shortlisted:false,channelTitle:c?.channel_title??"Previously tracked channel",channelUrl:c?.channel_url??null};});
  const merged=[...videos.map(v=>({...v,is_shortlisted:true})),...historical.filter(v=>!videos.some(x=>x.platform==="youtube"&&x.external_video_id===v.youtube_video_id))];
  const summary={shortlisted:videos.length,youtube:videos.filter(x=>x.platform==="youtube").length,instagram:videos.filter(x=>x.platform==="instagram").length,historical:historical.length,totalViews:merged.reduce((n,v)=>n+Number(v.view_count??0),0),totalLikes:merged.reduce((n,v)=>n+Number(v.like_count??0),0),totalComments:merged.reduce((n,v)=>n+Number(v.comment_count??0),0)};
  return NextResponse.json({videos:merged,shortlists:videos,summary});

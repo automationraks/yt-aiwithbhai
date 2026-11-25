@@ -138,6 +138,7 @@ export default function ChannelPreparationPage() {
                   <a href={selection.video_url} target="_blank" rel="noreferrer" className="inline-flex items-center gap-2 rounded-lg bg-cyan-500 px-4 py-2.5 text-sm font-semibold text-slate-950 hover:bg-cyan-400">
                     Open video manually <ExternalLink size={15} />
                   </a>
+                  <button onClick={()=>void shortlistSelection()} disabled={shortlisting||selection.isShortlisted} className="inline-flex items-center gap-2 rounded-lg border border-cyan-500/40 px-4 py-2.5 text-sm font-semibold text-cyan-200 disabled:opacity-50">{shortlisting?<RefreshCw size={14} className="animate-spin"/>:selection.isShortlisted?<CheckCircle2 size={14}/>:<Video size={14}/>} {selection.isShortlisted?"Shortlisted":"Shortlist video"}</button>
                   {selection.channel_url && (
                     <a href={selection.channel_url} target="_blank" rel="noreferrer" className="inline-flex items-center gap-2 rounded-lg border border-slate-700 px-4 py-2.5 text-sm text-slate-300 hover:bg-white/[.04]">
                       Open channel <ExternalLink size={14} />
