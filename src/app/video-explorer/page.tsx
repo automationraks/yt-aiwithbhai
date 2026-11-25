@@ -23,7 +23,10 @@ export default function VideoExplorerPage() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState("");
-  const [message, setMessage] = useState("");\n  const [manualUrl,setManualUrl]=useState("");\n  const [manualTitle,setManualTitle]=useState("");\n  const [savingManual,setSavingManual]=useState(false);
+  const [message, setMessage] = useState("");
+  const [manualUrl,setManualUrl]=useState("");
+  const [manualTitle,setManualTitle]=useState("");
+  const [savingManual,setSavingManual]=useState(false);
 
   const load = useCallback(async () => {
     setLoading(true); setError("");
@@ -38,7 +41,8 @@ export default function VideoExplorerPage() {
 
   useEffect(() => { void load(); }, [load]);
 
-  async function addManual(){setSavingManual(true);setError("");setMessage("");try{const response=await fetch("/api/video-explorer",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({action:"add_manual_link",url:manualUrl,title:manualTitle})});const result=await response.json();if(!response.ok)throw new Error(result.error||"Could not add video link.");setMessage(result.alreadyShortlisted?"This link is already in your shortlist.":"Manual video link added to Video Explorer.");setManualUrl("");setManualTitle("");await load();}catch(e){setError(e instanceof Error?e.message:"Could not add link.");}finally{setSavingManual(false);}}\n  async function refresh() {
+  async function addManual(){setSavingManual(true);setError("");setMessage("");try{const response=await fetch("/api/video-explorer",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({action:"add_manual_link",url:manualUrl,title:manualTitle})});const result=await response.json();if(!response.ok)throw new Error(result.error||"Could not add video link.");setMessage(result.alreadyShortlisted?"This link is already in your shortlist.":"Manual video link added to Video Explorer.");setManualUrl("");setManualTitle("");await load();}catch(e){setError(e instanceof Error?e.message:"Could not add link.");}finally{setSavingManual(false);}}
+  async function refresh() {
     setRefreshing(true); setError(""); setMessage("");
     try {
       const response = await fetch("/api/competitors/intelligence/refresh", { method: "POST" });
@@ -54,7 +58,8 @@ export default function VideoExplorerPage() {
     <Link href="/" className="mb-4 inline-flex items-center gap-2 text-xs text-slate-400 hover:text-white"><ArrowLeft size={14}/>Dashboard</Link>
     <div className="mb-6 flex flex-wrap items-end justify-between gap-4"><div><div className="mb-2 flex items-center gap-2 text-xs text-cyan-300"><Video size={14}/> NICHE-BASED VIDEO RESEARCH</div><h1 className="text-2xl font-semibold">Video Explorer</h1><p className="mt-2 max-w-3xl text-sm text-slate-400">Scans only approved, active channels. AI classifies each recent upload against AIWithBh@i&apos;s AI systems design and engineering niche. Off-topic videos are excluded from this view and content recommendations.</p></div><button onClick={() => void refresh()} disabled={refreshing || loading} className="inline-flex items-center gap-2 rounded-lg bg-cyan-500 px-4 py-2.5 text-sm font-semibold text-slate-950 hover:bg-cyan-400 disabled:opacity-50">{refreshing ? <Loader2 size={16} className="animate-spin"/> : <RefreshCw size={16}/>} {refreshing ? "Scanning active channels..." : "Refresh videos & metrics"}</button></div>
 
-    <section className="mb-5 rounded-xl border border-slate-800 bg-[#111925] p-4"><h2 className="text-sm font-semibold">Add a video manually</h2><p className="mt-1 text-xs text-slate-400">Paste a public YouTube video/Short or Instagram Reel/post link. It will be retained as a custom source.</p><div className="mt-3 grid gap-2 md:grid-cols-[1fr_1fr_auto]"><input value={manualUrl} onChange={e=>setManualUrl(e.target.value)} placeholder="https://..." className="rounded-lg border border-slate-700 bg-[#090d14] px-3 py-2 text-sm"/><input value={manualTitle} onChange={e=>setManualTitle(e.target.value)} placeholder="Optional title" className="rounded-lg border border-slate-700 bg-[#090d14] px-3 py-2 text-sm"/><button onClick={()=>void addManual()} disabled={!manualUrl.trim()||savingManual} className="inline-flex items-center justify-center gap-2 rounded-lg bg-cyan-500 px-4 py-2 text-sm font-semibold text-slate-950 disabled:opacity-50">{savingManual?<Loader2 size={14} className="animate-spin"/>:<Plus size={14}/>} Add to shortlist</button></div></section>\n    <div className="mb-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
+    <section className="mb-5 rounded-xl border border-slate-800 bg-[#111925] p-4"><h2 className="text-sm font-semibold">Add a video manually</h2><p className="mt-1 text-xs text-slate-400">Paste a public YouTube video/Short or Instagram Reel/post link. It will be retained as a custom source.</p><div className="mt-3 grid gap-2 md:grid-cols-[1fr_1fr_auto]"><input value={manualUrl} onChange={e=>setManualUrl(e.target.value)} placeholder="https://..." className="rounded-lg border border-slate-700 bg-[#090d14] px-3 py-2 text-sm"/><input value={manualTitle} onChange={e=>setManualTitle(e.target.value)} placeholder="Optional title" className="rounded-lg border border-slate-700 bg-[#090d14] px-3 py-2 text-sm"/><button onClick={()=>void addManual()} disabled={!manualUrl.trim()||savingManual} className="inline-flex items-center justify-center gap-2 rounded-lg bg-cyan-500 px-4 py-2 text-sm font-semibold text-slate-950 disabled:opacity-50">{savingManual?<Loader2 size={14} className="animate-spin"/>:<Plus size={14}/>} Add to shortlist</button></div></section>
+    <div className="mb-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
       {[["Active channels", summary.activeChannels], ["Niche-matched videos", summary.matchedVideos], ["Combined views", compact(summary.totalViews)], ["Combined likes", compact(summary.totalLikes)], ["Combined comments", compact(summary.totalComments)]].map(([label, value]) => <div key={String(label)} className="rounded-xl border border-slate-800 bg-[#111925] p-4"><div className="text-xs text-slate-400">{label}</div><div className="mt-2 text-2xl font-semibold tabular-nums">{value}</div></div>)}
     </div>
 

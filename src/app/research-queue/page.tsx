@@ -14,7 +14,10 @@ type Selection = {
   video_title: string;
   video_url: string;
   thumbnail_url: string | null;
-  selected_at: string;\n  platform?: "youtube"|"instagram";\n  social_video_id?: string|null;\n  isShortlisted?: boolean;
+  selected_at: string;
+  platform?: "youtube"|"instagram";
+  social_video_id?: string|null;
+  isShortlisted?: boolean;
 };
 
 type QueueResponse = {
@@ -46,7 +49,9 @@ export default function ChannelPreparationPage() {
   const [data, setData] = useState<QueueResponse | null>(null);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(true);
-  const [now, setNow] = useState(Date.now());\n  const [shortlisting,setShortlisting]=useState(false);\n  const [notice,setNotice]=useState("");
+  const [now, setNow] = useState(Date.now());
+  const [shortlisting,setShortlisting]=useState(false);
+  const [notice,setNotice]=useState("");
 
   const loadSelection = useCallback(async () => {
     try {
@@ -75,7 +80,8 @@ export default function ChannelPreparationPage() {
     };
   }, [loadSelection]);
 
-  async function shortlistSelection(){if(!selection)return;setShortlisting(true);setNotice("");setError("");try{const response=await fetch("/api/research-queue",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({action:"shortlist"})});const result=await response.json();if(!response.ok)throw new Error(result.error||"Could not shortlist video.");setNotice(result.alreadyShortlisted?"This video is already in Video Explorer.":"Added to Video Explorer shortlist.");await loadSelection();}catch(e){setError(e instanceof Error?e.message:"Could not shortlist video.");}finally{setShortlisting(false);}}\n  const selection = data?.selection ?? null;
+  async function shortlistSelection(){if(!selection)return;setShortlisting(true);setNotice("");setError("");try{const response=await fetch("/api/research-queue",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({action:"shortlist"})});const result=await response.json();if(!response.ok)throw new Error(result.error||"Could not shortlist video.");setNotice(result.alreadyShortlisted?"This video is already in Video Explorer.":"Added to Video Explorer shortlist.");await loadSelection();}catch(e){setError(e instanceof Error?e.message:"Could not shortlist video.");}finally{setShortlisting(false);}}
+  const selection = data?.selection ?? null;
 
   return (
     <main className="min-h-screen bg-[#090d14] px-4 py-8 text-white md:px-8">
@@ -97,7 +103,8 @@ export default function ChannelPreparationPage() {
           </div>
         </div>
 
-        {error && <div className="mb-5 rounded-lg border border-red-500/30 bg-red-500/10 p-3 text-sm text-red-300">{error}</div>}\n        {notice && <div className="mb-5 rounded-lg border border-emerald-500/20 bg-emerald-500/10 p-3 text-sm text-emerald-300">{notice}</div>}
+        {error && <div className="mb-5 rounded-lg border border-red-500/30 bg-red-500/10 p-3 text-sm text-red-300">{error}</div>}
+        {notice && <div className="mb-5 rounded-lg border border-emerald-500/20 bg-emerald-500/10 p-3 text-sm text-emerald-300">{notice}</div>}
 
         <section className="rounded-2xl border border-slate-800 bg-[#111925] p-5 md:p-7">
           <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
