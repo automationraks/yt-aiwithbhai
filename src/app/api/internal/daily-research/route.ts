@@ -2,6 +2,17 @@ import { NextResponse } from "next/server";
 import { createSupabaseAdminClient } from "@/lib/auth/session";
 import { generateResearchJson } from "@/lib/ai/research";
 export const runtime="nodejs"; export const dynamic="force-dynamic"; export const maxDuration=60;
+type ResearchScene = { startSeconds?: unknown; endSeconds?: unknown; visualPrompt?: unknown; onScreenText?: unknown };
+type ResearchIdea = {
+ title?: unknown; hook?: unknown; topic?: unknown; industry?: unknown; outline?: unknown;
+ opportunityScore?: unknown; sourceVideoIds?: unknown; sourceInstagramIds?: unknown;
+ scriptPackage?: {
+  complexity?: unknown; estimatedDurationSeconds?: unknown; script?: unknown; voiceover?: unknown;
+  scenes?: unknown; instagramCaption?: unknown; hashtags?: unknown; youtubeTitle?: unknown;
+  youtubeDescription?: unknown; videoStyle?: unknown;
+ };
+};
+type InstagramReference = { platform: "instagram"; mediaId: string; title: string; channel: string; username: string; url: string; publishedAt: string | null; views: null; caption: string; mediaType: string | null; likes: number | null; comments: number | null };
 const system=`You are AIWithBh@i's senior AI systems research strategist. Audience: software engineers, architects and IT professionals. Return JSON only: {ideas:[{title,hook,topic,industry,outline:string[],opportunityScore:number,sourceVideoIds:string[],scriptPackage:{complexity:"simple"|"medium"|"complex",estimatedDurationSeconds:number,script:string,voiceover:string,scenes:[{startSeconds:number,endSeconds:number,visualPrompt:string,onScreenText:string}],instagramCaption:string,hashtags:string[],youtubeTitle:string,youtubeDescription:string,videoStyle:string}}]}. Create 6 original case-study-first ideas grounded only in supplied YouTube video IDs and Instagram media IDs. Do not copy titles or invent facts/metrics. Every idea needs a complete 30-60 second English vertical short narration, strong 2-second hook, useful technical explanation and ending. Simple 30-40s, medium 40-50s, complex 50-60s. Voiceover must exactly equal script. Scene timings sequentially cover the video in segments no longer than 7 seconds. No spoken content outside the approved narration.`;
 export async function POST(request:Request){
  const secret=process.env.CRON_SECRET;if(!secret||request.headers.get("authorization")!==`Bearer ${secret}`)return NextResponse.json({error:"Unauthorized"},{status:401});
@@ -21,12 +32,12 @@ export async function POST(request:Request){
  ].filter(Boolean));
  const {data:instagramRows,error:instagramError}=handles.size?await db.from("instagram_content_sources").select("instagram_media_id,source_username,source_name,permalink,caption,timestamp,media_type,media_product_type,like_count,comments_count").eq("owner_id",ownerId).in("source_username",[...handles]).order("timestamp",{ascending:false}).limit(80):{data:[],error:null};
  if(instagramError)return NextResponse.json({error:instagramError.message},{status:500});
- const instagramPosts=(instagramRows??[]).map(p=>({mediaId:p.instagram_media_id,username:p.source_username,title:(p.caption??"").slice(0,160)||("Instagram post by @"+p.source_username),caption:(p.caption??"").slice(0,800),url:p.permalink,publishedAt:p.timestamp,mediaType:p.media_type,productType:p.media_product_type,likes:p.like_count,comments:p.comments_count}));
+ const instagramPosts:InstagramReference[]=(instagramRows??[]).map(p=>({mediaId:p.instagram_media_id,username:p.source_username,title:(p.caption??"").slice(0,160)||("Instagram post by @"+p.source_username),caption:(p.caption??"").slice(0,800),url:p.permalink,publishedAt:p.timestamp,mediaType:p.media_type,productType:p.media_product_type,likes:p.like_count,comments:p.comments_count}));
  const channelMap=new Map((channels??[]).map(x=>[x.id,x.channel_title]));
  const sources=videos.map(v=>({videoId:v.youtube_video_id,title:v.title,description:(v.description??"").slice(0,500),publishedAt:v.published_at,views:v.view_count,url:v.video_url??"https://www.youtube.com/watch?v="+v.youtube_video_id,channel:channelMap.get(v.competitor_id)??"Qualified channel"}));
  try{
   const result=await generateResearchJson(system,JSON.stringify({brand:"AIWithBh@i",timezone:"Asia/Kolkata",audience:"IT professionals and software engineers",architectureTrends:trends??[],sourceVideos:sources,instagramResearchPosts:instagramPosts,avoidRepeating:(old??[]).map(x=>x.title)}));
-  const raw=result.data as {ideas?:Array<Record<string,any>>};const valid=new Set(sources.map(x=>x.videoId)),validInstagram=new Set(instagramPosts.map(x=>x.mediaId));
+  const raw=result.data as {ideas?:ResearchIdea[]};const valid=new Set(sources.map(x=>x.videoId)),validInstagram=new Set(instagramPosts.map(x=>x.mediaId));
   const prepared=(Array.isArray(raw.ideas)?raw.ideas:[]).slice(0,10).map(item=>{
    const p=item.scriptPackage&&typeof item.scriptPackage==="object"?item.scriptPackage:{};
    const title=String(item.title??"").trim().slice(0,220),voice=String(p.voiceover??p.script??"").trim();
@@ -34,7 +45,7 @@ export async function POST(request:Request){
    const d=Number(p.estimatedDurationSeconds),duration=Number.isFinite(d)?Math.max(30,Math.min(60,Math.round(d))):(complexity==="complex"?55:complexity==="medium"?45:35);
    const refs=Array.isArray(item.sourceVideoIds)?[...new Set(item.sourceVideoIds.filter((x:unknown):x is string=>typeof x==="string"&&valid.has(x)))]:[];
    const instagramIds=Array.isArray(item.sourceInstagramIds)?[...new Set(item.sourceInstagramIds.filter((x:unknown):x is string=>typeof x==="string"&&validInstagram.has(x)))]:[];
-   const scenes=(Array.isArray(p.scenes)?p.scenes:[]).slice(0,16).map((s:any)=>({startSeconds:Number(s.startSeconds)||0,endSeconds:Number(s.endSeconds)||0,visualPrompt:String(s.visualPrompt??""),onScreenText:String(s.onScreenText??"")}));
+   const scenes=(Array.isArray(p.scenes)?p.scenes:[]).slice(0,16).map((scene): {startSeconds:number;endSeconds:number;visualPrompt:string;onScreenText:string}=>{const s=(scene&&typeof scene==="object"?scene:{}) as ResearchScene;return {startSeconds:Number(s.startSeconds)||0,endSeconds:Number(s.endSeconds)||0,visualPrompt:String(s.visualPrompt??""),onScreenText:String(s.onScreenText??"")};});
    const key=title.toLowerCase().replace(/[^a-z0-9]+/g,"-").replace(/^-|-$/g,"").slice(0,170);
    return {owner_id:ownerId,title,hook:String(item.hook??"").slice(0,700),outline:Array.isArray(item.outline)?item.outline.slice(0,12):[],format:"short",language:"en",topic:String(item.topic??item.industry??"AI engineering").slice(0,180),opportunity_score:Math.max(0,Math.min(100,Number(item.opportunityScore)||0)),source_video_ids:refs,source_references:[...sources.filter(s=>refs.includes(s.videoId)).map(s=>({...s,platform:"youtube"})),...instagramPosts.filter(p=>instagramIds.includes(p.mediaId)).map(p=>({platform:"instagram",mediaId:p.mediaId,title:p.title,channel:"@"+p.username,username:p.username,url:p.url,publishedAt:p.publishedAt,views:null,caption:p.caption,mediaType:p.mediaType,likes:p.likes,comments:p.comments}))],idea_key:key,status:"idea",script_package:{complexity,estimatedDurationSeconds:duration,script:voice,voiceover:voice,scenes,instagramCaption:String(p.instagramCaption??""),hashtags:Array.isArray(p.hashtags)?p.hashtags.filter((x:unknown)=>typeof x==="string").slice(0,15):[],youtubeTitle:String(p.youtubeTitle??title),youtubeDescription:String(p.youtubeDescription??""),videoStyle:String(p.videoStyle??"Vertical 9:16 technical motion graphics")},target_duration_seconds:duration,video_production_status:"not_started"};
   }).filter(x=>x.title&&x.idea_key&&(x.source_video_ids.length>0||x.source_references.some((r:any)=>r.platform==="instagram"))&&x.script_package.voiceover.length>40&&x.script_package.scenes.length);
