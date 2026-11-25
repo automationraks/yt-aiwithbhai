@@ -14,9 +14,12 @@ async function authenticated() {
 export async function GET() {
   const auth = await authenticated();
   if (auth.error) return auth.error;
-  const { data, error } = await auth.db!.from("automation_schedules").select("schedule_time,timezone,enabled,last_dispatched_on").eq("owner_id", auth.user!.id).eq("schedule_key", "daily_content_research").maybeSingle();
+  const { data, error } = await auth.db!.from("automation_schedules").upsert({ owner_id: auth.user!.id, schedule_key: "daily_content_research", schedule_time: "12:00", timezone: "Asia/Kolkata", enabled: true }, { onConflict: "owner_id", ignoreDuplicates: true }).select("schedule_time,timezone,enabled,last_dispatched_on").maybeSingle();
   if (error) return NextResponse.json({ error: "Could not load automation schedule. Apply the schedule migration first.", details: error.message }, { status: 500 });
-  return NextResponse.json({ schedule: data ?? { schedule_time: "12:00", timezone: "Asia/Kolkata", enabled: true, last_dispatched_on: null } });
+  if (data) return NextResponse.json({ schedule: data });
+  const { data: existing, error: readError } = await auth.db!.from("automation_schedules").select("schedule_time,timezone,enabled,last_dispatched_on").eq("owner_id", auth.user!.id).eq("schedule_key", "daily_content_research").single();
+  if (readError) return NextResponse.json({ error: "Could not read saved schedule.", details: readError.message }, { status: 500 });
+  return NextResponse.json({ schedule: existing });
 }
 
 export async function PUT(request: Request) {
