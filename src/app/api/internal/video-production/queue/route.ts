@@ -2,10 +2,12 @@ import { createHash,timingSafeEqual } from "node:crypto";
 import { NextResponse } from "next/server";
 import { createSupabaseAdminClient } from "@/lib/auth/session";
 export const runtime="nodejs";export const dynamic="force-dynamic";
+type SegmentPlan = { sequence: number; outputStoragePath: string; durationSeconds: number };
+type QueueRequest = { event?: unknown; ownerId?: unknown; idea?: { id?: unknown; approvedScript?: unknown; approvedScriptHash?: unknown; segments?: unknown; targetDurationSeconds?: unknown; title?: unknown }; callback?: { url?: unknown }; storage?: { bucket?: unknown; private?: unknown; finalPath?: unknown } };
 const eq=(a:string,b:string)=>{const x=Buffer.from(a),y=Buffer.from(b);return x.length===y.length&&timingSafeEqual(x,y);};
 export async function POST(request:Request){
  const secret=process.env.N8N_WEBHOOK_SECRET;if(!secret||!eq(request.headers.get("authorization")??"","Bearer "+secret))return NextResponse.json({error:"Unauthorized"},{status:401});
- let b:any;try{b=await request.json();}catch{return NextResponse.json({error:"Invalid JSON"},{status:400});}
+ let b:QueueRequest;try{b=await request.json() as QueueRequest;}catch{return NextResponse.json({error:"Invalid JSON"},{status:400});}
  if(b.event!=="content_approved"||typeof b.ownerId!=="string"||typeof b.idea?.id!=="string"||typeof b.idea?.approvedScript!=="string"||typeof b.idea?.approvedScriptHash!=="string"||!Array.isArray(b.idea?.segments))return NextResponse.json({error:"Invalid approved-video event"},{status:400});
  const app=process.env.NEXT_PUBLIC_APP_URL?.replace(/\/$/,"");if(!app||b.callback?.url!==app+"/api/video-production/complete")return NextResponse.json({error:"Invalid callback URL"},{status:400});
  const finalPath=b.ownerId+"/"+b.idea.id+"/final.mp4";if(b.storage?.bucket!=="generated-videos"||b.storage?.private!==true||b.storage?.finalPath!==finalPath)return NextResponse.json({error:"Invalid private storage destination"},{status:400});
@@ -13,8 +15,8 @@ export async function POST(request:Request){
  const db=createSupabaseAdminClient();const {data:idea,error}=await db.from("content_ideas").select("id,owner_id,status,approved_script_snapshot,approved_script_hash,video_segments").eq("id",b.idea.id).eq("owner_id",b.ownerId).maybeSingle();
  if(error||!idea)return NextResponse.json({error:"Approved content record not found"},{status:404});
  if(idea.status!=="approved"||idea.approved_script_snapshot!==b.idea.approvedScript||idea.approved_script_hash!==hash)return NextResponse.json({error:"Database approved-script snapshot mismatch"},{status:409});
- const expected=Array.isArray(idea.video_segments)?idea.video_segments:[],received=b.idea.segments;
- if(!expected.length||expected.length!==received.length||expected.some((s:any,i:number)=>s.sequence!==received[i]?.sequence||s.outputStoragePath!==received[i]?.outputStoragePath||!Number.isFinite(Number(received[i]?.durationSeconds))))return NextResponse.json({error:"Segment plan does not match approved record"},{status:409});
+ const expected:SegmentPlan[]=Array.isArray(idea.video_segments)?idea.video_segments as SegmentPlan[]:[],received=b.idea.segments as SegmentPlan[];
+ if(!expected.length||expected.length!==received.length||expected.some((s,i)=>s.sequence!==received[i]?.sequence||s.outputStoragePath!==received[i]?.outputStoragePath||!Number.isFinite(Number(received[i]?.durationSeconds))))return NextResponse.json({error:"Segment plan does not match approved record"},{status:409});
  const {data:old}=await db.from("video_render_jobs").select("id,status").eq("idea_id",idea.id).eq("script_hash",hash).maybeSingle();
  if(old)return NextResponse.json({ok:true,duplicate:true,jobId:old.id,status:old.status});
  const payload={ownerId:b.ownerId,ideaId:idea.id,approvedScript:b.idea.approvedScript,scriptHash:hash,targetDurationSeconds:Number(b.idea.targetDurationSeconds),callbackUrl:b.callback.url,storage:b.storage,segments:received,title:String(b.idea.title??"AIWithBh@i technical short").slice(0,180),language:"en"};
