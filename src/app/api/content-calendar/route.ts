@@ -18,4 +18,43 @@ export async function GET(){
  const items=(calendar??[]).map(item=>({...item,content_research_briefs:(briefsResult.data??[]).filter(x=>x.calendar_id===item.id),content_scripts:(scriptsResult.data??[]).filter(x=>x.calendar_id===item.id)}));
  const publishingItems=(targetsResult.data??[]).map(t=>({...t,title:(t.content_ideas as {title?:string}|null)?.title??"Short video",video_storage_path:(t.content_ideas as {video_storage_path?:string|null}|null)?.video_storage_path??null}));
  return NextResponse.json({items,publishingItems});
+
+
+export async function POST(req: Request) {
+  const s = await createSupabaseServerClient();
+  if (!s) return NextResponse.json({ error: "Supabase is not configured." }, { status: 503 });
+
+  const { data: { user }, error: authError } = await s.auth.getUser();
+  if (authError || !user) return NextResponse.json({ error: "Unauthorized." }, { status: 401 });
+
+  let bodyInput: unknown;
+  try {
+    bodyInput = await req.json();
+  } catch {
+    return NextResponse.json({ error: "Invalid JSON." }, { status: 400 });
+  }
+  const body = typeof bodyInput === "object" && bodyInput !== null && !Array.isArray(bodyInput)
+    ? bodyInput as Record<string, unknown>
+    : {};
+  const title = String(body.title ?? "").trim();
+  if (!title) return NextResponse.json({ error: "A video topic is required." }, { status: 400 });
+
+  const { data, error } = await s.from("content_calendar").insert({
+    owner_id: user.id,
+    title,
+    opportunity_id: typeof body.opportunity_id === "string" ? body.opportunity_id : null,
+    scheduled_date: typeof body.scheduled_date === "string" ? body.scheduled_date || null : null,
+    format: "short",
+    target_duration_seconds: 55
+  }).select("*").single();
+
+  if (error) {
+    return NextResponse.json({
+      error: "Could not create calendar item.",
+      details: error.message,
+      code: error.code,
+      hint: error.hint
+    }, { status: 500 });
+  }
+  return NextResponse.json({ item: data });
 }
