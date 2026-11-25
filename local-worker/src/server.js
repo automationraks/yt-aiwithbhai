@@ -14,18 +14,22 @@ async function pcmToWav(pcm,wav,mime){const rate=Number(mime.match(/rate=(\d+)/i
 async function probe(file){return Number((await exec(ffprobe,["-v","error","-show_entries","format=duration","-of","default=noprint_wrappers=1:nokey=1",file])).trim());}
 async function transcribe(file){const raw=await exec(python,[path.join(root,"src","transcribe.py"),file]);return JSON.parse(raw.trim().split(/\r?\n/).at(-1));}
 async function update(id,values){const {error}=await db.from("video_render_jobs").update({...values,updated_at:new Date().toISOString()}).eq("id",id);if(error)throw error;}
+async function logEvent(job,eventKey,stage,status,message,metadata={}){const {error}=await db.from("workflow_event_logs").insert({owner_id:job.owner_id,idea_id:job.idea_id,workflow:"video_production",event_key:eventKey,stage,status,message,metadata});if(error)console.error("Workflow event log failed:",error.message);}
 async function upload(file,dest){const data=await fs.readFile(file);const {error}=await db.storage.from("generated-videos").upload(dest,data,{contentType:"video/mp4",upsert:true,cacheControl:"3600"});if(error)throw error;}
 async function callback(job,payload){const r=await fetch(job.callbackUrl,{method:"POST",headers:{"content-type":"application/json","x-production-callback-secret":process.env.N8N_WEBHOOK_SECRET},body:JSON.stringify(payload),signal:AbortSignal.timeout(30000)});const d=await r.json().catch(()=>({}));if(!r.ok)throw new Error("Production callback rejected "+r.status+": "+(d.error||d.reason||"unknown"));return d;}
 async function claim(){const {data,error}=await db.from("video_render_jobs").select("*").eq("status","queued").order("created_at").limit(1).maybeSingle();if(error)throw error;if(!data)return null;const {data:row,error:e}=await db.from("video_render_jobs").update({status:"processing",started_at:new Date().toISOString(),attempts:(data.attempts||0)+1,updated_at:new Date().toISOString()}).eq("id",data.id).eq("status","queued").select("*").maybeSingle();if(e)throw e;return row;}
 async function process(row){
  const j=row.payload,crypto=await import("node:crypto");
+ await logEvent(row,"worker_started","worker_started","processing","Local renderer claimed the approved video job.",{jobId:row.id,attempt:row.attempts});
  const {error:ideaStatusError}=await db.from("content_ideas").update({video_production_status:"processing",video_verification:{stage:"local_rendering",jobId:row.id}}).eq("id",row.idea_id).eq("owner_id",row.owner_id);
  if(ideaStatusError)throw ideaStatusError;if(!j||!j.approvedScript||!Array.isArray(j.segments)||!j.callbackUrl)throw new Error("Queue payload incomplete.");
  const hash=crypto.createHash("sha256").update(j.approvedScript,"utf8").digest("hex");if(hash!==row.script_hash||hash!==j.scriptHash)throw new Error("Approved script SHA-256 mismatch.");
  if(j.segments.some((s,i)=>s.sequence!==i+1||!s.outputStoragePath))throw new Error("Segments are missing or out of order.");
  const work=path.join(temp,row.id);await fs.mkdir(work,{recursive:true});await fs.mkdir(output,{recursive:true});
  const pcm=path.join(work,"voice.pcm"),wav=path.join(work,"voice.wav"),final=path.join(work,"final.mp4");
+ await logEvent(row,"tts_started","narration_synthesis","started","Generating narration from the frozen approved script.");
  const tts=await synthesizeApprovedScript({text:j.approvedScript,apiKey:process.env.GEMINI_API_KEY,model:process.env.GEMINI_TTS_MODEL||"gemini-2.5-flash-preview-tts",voice:process.env.GEMINI_TTS_VOICE||"Kore",language:process.env.GEMINI_TTS_LANGUAGE||"en-IN"});
+ await logEvent(row,"tts_completed","narration_synthesis","completed","Approved narration audio generated.",{mimeType:tts.mimeType});
  await fs.writeFile(pcm,tts.audio);await pcmToWav(pcm,wav,tts.mimeType);
  const audioSeconds=await probe(wav),target=Number(j.targetDurationSeconds)||audioSeconds;if(audioSeconds<25||audioSeconds>65)throw new Error("Gemini TTS duration outside production range: "+audioSeconds.toFixed(1));
  const ratio=audioSeconds/target;if(ratio<0.82||ratio>1.2)throw new Error("Narration duration differs too much from approved target. Adjust script duration and approve again.");
@@ -34,18 +38,27 @@ async function process(row){
  const segments=j.segments.map(s=>({...s,durationSeconds:Number(s.durationSeconds)}));
  const planTotal=segments.reduce((n,s)=>n+s.durationSeconds,0);
  if(Math.abs(planTotal-target)>1.5)throw new Error("Segment timeline does not match target video duration.");
+ await logEvent(row,"segment_render_started","segment_rendering","started","Rendering the approved storyboard into ordered video segments.",{segmentCount:segments.length});
  const rendered=await renderSegments({job:{...j,segments},workDir:work,stockDir:stock,ffmpeg,ffprobe});
+ await logEvent(row,"segment_render_completed","segment_rendering","completed","All video segments rendered in sequence.",{segmentCount:rendered.clips.length});
+ await logEvent(row,"captions_started","caption_generation","started","Generating captions from the approved narration audio.");
  const captionAsr=await transcribe(adjusted);const srt=path.join(work,"captions.srt");await writeSubtitles(captionAsr,srt);
+ await logEvent(row,"captions_completed","caption_generation","completed","Captions generated from the narration audio.");
  const duration=await muxFinal({silent:rendered.silent,audio:adjusted,subtitles:srt,final,ffmpeg,ffprobe});
+ await logEvent(row,"video_assembled","video_assembly","completed","Narration, visuals and captions merged into the final video.",{durationSeconds:duration});
+ await logEvent(row,"transcript_check_started","transcript_verification","started","Transcribing the final rendered video to verify it against the approved script.");
  const asr=await transcribe(final);
+ await logEvent(row,"transcript_check_completed","transcript_verification","completed","Final video transcription completed; server callback will enforce exact script matching.",{transcribedCharacters:asr.text?.length??0});
  const results=[];for(let i=0;i<rendered.clips.length;i++){await upload(rendered.clips[i],segments[i].outputStoragePath);results.push({sequence:segments[i].sequence,storagePath:segments[i].outputStoragePath,status:"completed"});}
  await upload(final,j.storage.finalPath);
+ await logEvent(row,"assets_uploaded","supabase_upload","completed","Rendered segments and final video uploaded to private Supabase Storage.",{segmentCount:results.length,finalPath:j.storage.finalPath});
  const checked=await callback(j,{ownerId:j.ownerId,ideaId:j.ideaId,status:"completed",finalStoragePath:j.storage.finalPath,scriptHash:hash,transcript:asr.text,durationSeconds:duration,segmentResults:results});
  await update(row.id,{status:"completed",completed_at:new Date().toISOString(),result:{callbackStatus:checked.status,durationSeconds:duration,transcriptMatchesApprovedScript:checked.transcriptMatchesApprovedScript}});
+ await logEvent(row,"worker_completed","worker_completed",checked.status==="ready"?"completed":"review_required",checked.status==="ready"?"Local video production and transcript verification completed.":"Video rendered but needs transcript review.",{durationSeconds:duration,transcriptMatchesApprovedScript:checked.transcriptMatchesApprovedScript});
  await fs.rm(work,{recursive:true,force:true});
  console.log("Completed job "+row.id+"; verification="+checked.status);
 }
-async function loop(){while(!stopping){try{const row=await claim();if(!row){await new Promise(r=>setTimeout(r,poll));continue;}active=true;try{await process(row);}catch(e){const message=e instanceof Error?e.message:"Local render failed";console.error("Job "+row.id+" failed:",message);await update(row.id,{status:"failed",error:message.slice(0,1500),completed_at:new Date().toISOString()}).catch(console.error);if(row.payload?.callbackUrl)await callback(row.payload,{ownerId:row.payload.ownerId,ideaId:row.payload.ideaId,status:"failed",error:message.slice(0,800)}).catch(console.error);}finally{active=false;}}catch(e){console.error("Worker loop error:",e);await new Promise(r=>setTimeout(r,poll));}}}
+async function loop(){while(!stopping){try{const row=await claim();if(!row){await new Promise(r=>setTimeout(r,poll));continue;}active=true;try{await process(row);}catch(e){const message=e instanceof Error?e.message:"Local render failed";console.error("Job "+row.id+" failed:",message);await logEvent(row,"worker_failed","worker_failed","failed","Local video renderer failed.",{error:message.slice(0,1000)});await update(row.id,{status:"failed",error:message.slice(0,1500),completed_at:new Date().toISOString()}).catch(console.error);if(row.payload?.callbackUrl)await callback(row.payload,{ownerId:row.payload.ownerId,ideaId:row.payload.ideaId,status:"failed",error:message.slice(0,800)}).catch(console.error);}finally{active=false;}}catch(e){console.error("Worker loop error:",e);await new Promise(r=>setTimeout(r,poll));}}}
 const server=(await import("node:http")).createServer((req,res)=>{if(req.method==="GET"&&req.url==="/health"){res.writeHead(200,{"content-type":"application/json"});res.end(JSON.stringify({ok:true,worker:"AIWithBh@i local renderer",active,pollIntervalMs:poll}));return;}res.writeHead(404);res.end();});
 const port=Number(process.env.PORT)||8787;server.listen(port,"127.0.0.1",()=>console.log("Renderer health endpoint http://127.0.0.1:"+port+"/health; outbound Supabase polling active."));
 process.on("SIGINT",()=>{stopping=true;server.close();});process.on("SIGTERM",()=>{stopping=true;server.close();});
