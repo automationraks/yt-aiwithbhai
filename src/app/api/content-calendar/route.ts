@@ -19,6 +19,7 @@ export async function GET(){
  const publishingItems=(targetsResult.data??[]).map(t=>({...t,title:(t.content_ideas as {title?:string}|null)?.title??"Short video",video_storage_path:(t.content_ideas as {video_storage_path?:string|null}|null)?.video_storage_path??null}));
  return NextResponse.json({items,publishingItems});
 
+}
 
 export async function POST(req: Request) {
   const s = await createSupabaseServerClient();
