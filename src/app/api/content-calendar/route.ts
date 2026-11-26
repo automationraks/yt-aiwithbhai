@@ -18,7 +18,7 @@ export async function GET(){
  const items=(calendar??[]).map(item=>({...item,content_research_briefs:(briefsResult.data??[]).filter(x=>x.calendar_id===item.id),content_scripts:(scriptsResult.data??[]).filter(x=>x.calendar_id===item.id)}));
  const publishingItems=(targetsResult.data??[]).map(t=>({...t,title:(t.content_ideas as {title?:string}|null)?.title??"Short video",video_storage_path:(t.content_ideas as {video_storage_path?:string|null}|null)?.video_storage_path??null}));
  return NextResponse.json({items,publishingItems});
-
+}
 
 export async function POST(req: Request) {
   const s = await createSupabaseServerClient();
