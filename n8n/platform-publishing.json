@@ -230,7 +230,8 @@
         "options": {
           "privacyStatus": "public"
         }
-      }
+      },
+      "onError": "continueRegularOutput"
     },
     {
       "id": "ig-create",
@@ -273,7 +274,8 @@
         "options": {
           "timeout": 60000
         }
-      }
+      },
+      "onError": "continueRegularOutput"
     },
     {
       "id": "ig-wait",
@@ -318,7 +320,8 @@
         "options": {
           "timeout": 60000
         }
-      }
+      },
+      "onError": "continueRegularOutput"
     },
     {
       "id": "yt-callback",
@@ -344,7 +347,7 @@
         "sendBody": true,
         "contentType": "json",
         "specifyBody": "json",
-        "jsonBody": "={{ { ownerId:$('Build public video URL').item.json.ownerId, ideaId:$('Build public video URL').item.json.ideaId, platform:'youtube', status:'published', platformPostId:$json.id, publishedUrl:'https://www.youtube.com/watch?v='+$json.id } }}",
+        "jsonBody": "={{ { ownerId:$('Build public video URL').item.json.ownerId, ideaId:$('Build public video URL').item.json.ideaId, platform:'youtube', status:$json.error?'failed':'published', platformPostId:$json.id, publishedUrl:$json.id?'https://www.youtube.com/watch?v='+$json.id:undefined, error:$json.error?.message } }}",
         "options": {
           "timeout": 30000
         }
@@ -374,7 +377,7 @@
         "sendBody": true,
         "contentType": "json",
         "specifyBody": "json",
-        "jsonBody": "={{ { ownerId:$('Build public video URL').item.json.ownerId, ideaId:$('Build public video URL').item.json.ideaId, platform:'instagram', status:'published', platformPostId:$json.id, publishedUrl:'https://www.instagram.com/' } }}",
+        "jsonBody": "={{ { ownerId:$('Build public video URL').item.json.ownerId, ideaId:$('Build public video URL').item.json.ideaId, platform:'instagram', status:$json.error?'failed':'published', platformPostId:$json.id, publishedUrl:$json.id?'https://www.instagram.com/reel/'+$json.id+'/':undefined, error:$json.error?.message } }}",
         "options": {
           "timeout": 30000
         }
@@ -584,10 +587,42 @@
         "sendBody": true,
         "contentType": "json",
         "specifyBody": "json",
-        "jsonBody": "={{ { ownerId:$('Build public video URL').item.json.ownerId, ideaId:$('Build public video URL').item.json.ideaId, platform:'instagram', status:'failed', error:$json.statusCode==='ERROR'?'Instagram rejected Reel processing':'Instagram processing timed out after 20 checks' } }}",
+        "jsonBody": "={{ { ownerId:$('Build public video URL').item.json.ownerId, ideaId:$('Build public video URL').item.json.ideaId, platform:'instagram', status:'failed', error:$json.error?.message || ($json.statusCode==='ERROR'?'Instagram rejected Reel processing':'Instagram processing timed out after 20 checks') } }}",
         "options": {
           "timeout": 30000
         }
+      }
+    },
+    {
+      "id": "ig-container-check",
+      "name": "Instagram container created?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        2120,
+        540
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "leftValue": "={{$json.id}}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "notEmpty"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
       }
     }
   ],
@@ -702,7 +737,7 @@
       "main": [
         [
           {
-            "node": "Initialize Instagram processing poll",
+            "node": "Instagram container created?",
             "type": "main",
             "index": 0
           }
@@ -834,6 +869,24 @@
         [
           {
             "node": "Check Instagram Reel processing",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Instagram container created?": {
+      "main": [
+        [
+          {
+            "node": "Initialize Instagram processing poll",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Callback - Instagram publishing failed",
             "type": "main",
             "index": 0
           }
