@@ -1,0 +1,535 @@
+{
+  "name": "AIWithBh@i - Scheduled YouTube and Instagram Publishing",
+  "nodes": [
+    {
+      "id": "pub-webhook",
+      "name": "Publishing schedule webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [
+        200,
+        300
+      ],
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "aiwithbhai-publishing",
+        "authentication": "headerAuth",
+        "responseMode": "onReceived",
+        "options": {}
+      }
+    },
+    {
+      "id": "pub-normalize",
+      "name": "Validate and split platform targets",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        440,
+        300
+      ],
+      "parameters": {
+        "jsCode": "const e=$json.body??$json;\nif(e.event!=='video_scheduled'||!e.ownerId||!e.idea?.id||!e.idea?.videoStoragePath||!e.callback?.url) throw new Error('Invalid video_scheduled payload.');\nif(!Array.isArray(e.targets)||e.targets.length!==2) throw new Error('Exactly two platform targets are required.');\nconst seen=new Set();\nreturn e.targets.map(t=>{if(!t.id||!['youtube','instagram'].includes(t.platform)||!t.scheduledAt||!Number.isFinite(Date.parse(t.scheduledAt)))throw new Error('Invalid target.');if(seen.has(t.platform))throw new Error('Duplicate platform target.');seen.add(t.platform);return {json:{ownerId:e.ownerId,ideaId:e.idea.id,title:e.idea.title??'AIWithBh@i video',caption:e.idea.caption??e.idea.title??'',videoStoragePath:e.idea.videoStoragePath,scheduledAt:t.scheduledAt,targetId:t.id,platform:t.platform,callback:e.callback}};});\nif(!seen.has('youtube')||!seen.has('instagram')) throw new Error('Both platforms are required.');"
+      }
+    },
+    {
+      "id": "pub-wait",
+      "name": "Wait until platform schedule",
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1.1,
+      "position": [
+        700,
+        300
+      ],
+      "parameters": {
+        "resume": "specificTime",
+        "dateTime": "={{$json.scheduledAt}}",
+        "options": {}
+      }
+    },
+    {
+      "id": "pub-mark",
+      "name": "Callback - publishing started",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        940,
+        300
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "={{$json.callback.url}}",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "x-publishing-callback-secret",
+              "value": "={{$env.N8N_PUBLISHING_CALLBACK_SECRET}}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "json",
+        "specifyBody": "json",
+        "jsonBody": "={{ { ownerId:$json.ownerId, ideaId:$json.ideaId, platform:$json.platform, status:'publishing' } }}",
+        "options": {
+          "timeout": 30000
+        }
+      }
+    },
+    {
+      "id": "pub-signed-url",
+      "name": "Create temporary Supabase video URL",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1180,
+        300
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "={{$env.SUPABASE_URL + '/storage/v1/object/sign/generated-videos/' + $json.videoStoragePath}}",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "apikey",
+              "value": "={{$env.SUPABASE_SERVICE_ROLE_KEY}}"
+            },
+            {
+              "name": "Authorization",
+              "value": "={{'Bearer ' + $env.SUPABASE_SERVICE_ROLE_KEY}}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "json",
+        "specifyBody": "json",
+        "jsonBody": "={{ { expiresIn:3600 } }}",
+        "options": {
+          "timeout": 30000
+        }
+      }
+    },
+    {
+      "id": "pub-attach-url",
+      "name": "Build public video URL",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1420,
+        300
+      ],
+      "parameters": {
+        "jsCode": "const prev=$('Create temporary Supabase video URL').item.json; const signed=prev.signedURL??prev.signedUrl; if(!signed) throw new Error('Supabase did not return signedURL.'); const base=$env.SUPABASE_URL.replace(/\\/$/,''); const url=signed.startsWith('http')?signed:base+'/storage/v1'+(signed.startsWith('/')?signed:'/'+signed); return [{json:{...$json,videoUrl:url}}];"
+      }
+    },
+    {
+      "id": "pub-switch",
+      "name": "Route by platform",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.2,
+      "position": [
+        1660,
+        300
+      ],
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{$json.platform}}",
+                    "rightValue": "youtube",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "youtube"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{$json.platform}}",
+                    "rightValue": "instagram",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "instagram"
+            }
+          ]
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "yt-download",
+      "name": "Download video for YouTube",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1900,
+        180
+      ],
+      "parameters": {
+        "url": "={{$json.videoUrl}}",
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "file",
+              "outputPropertyName": "data"
+            }
+          }
+        }
+      }
+    },
+    {
+      "id": "yt-upload",
+      "name": "Upload YouTube video",
+      "type": "n8n-nodes-base.youTube",
+      "typeVersion": 1,
+      "position": [
+        2140,
+        180
+      ],
+      "parameters": {
+        "resource": "video",
+        "operation": "upload",
+        "title": "={{$('Build public video URL').item.json.title}}",
+        "regionCode": "IN",
+        "categoryId": "28",
+        "binaryPropertyName": "data",
+        "options": {
+          "privacyStatus": "private"
+        }
+      }
+    },
+    {
+      "id": "ig-create",
+      "name": "Create Instagram Reel container",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1900,
+        440
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "={{$env.META_GRAPH_API_VERSION ? 'https://graph.facebook.com/' + $env.META_GRAPH_API_VERSION + '/' + $env.INSTAGRAM_BUSINESS_ACCOUNT_ID + '/media' : 'https://graph.facebook.com/v24.0/' + $env.INSTAGRAM_BUSINESS_ACCOUNT_ID + '/media'}}",
+        "sendBody": true,
+        "contentType": "form-urlencoded",
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "media_type",
+              "value": "REELS"
+            },
+            {
+              "name": "video_url",
+              "value": "={{$('Build public video URL').item.json.videoUrl}}"
+            },
+            {
+              "name": "caption",
+              "value": "={{$('Build public video URL').item.json.caption}}"
+            },
+            {
+              "name": "share_to_feed",
+              "value": "true"
+            },
+            {
+              "name": "access_token",
+              "value": "={{$env.INSTAGRAM_ACCESS_TOKEN}}"
+            }
+          ]
+        },
+        "options": {
+          "timeout": 60000
+        }
+      }
+    },
+    {
+      "id": "ig-wait",
+      "name": "Wait for Instagram processing",
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1.1,
+      "position": [
+        2140,
+        440
+      ],
+      "parameters": {
+        "amount": 90,
+        "unit": "seconds"
+      }
+    },
+    {
+      "id": "ig-publish",
+      "name": "Publish Instagram Reel",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2380,
+        440
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "={{'https://graph.facebook.com/' + ($env.META_GRAPH_API_VERSION || 'v24.0') + '/' + $env.INSTAGRAM_BUSINESS_ACCOUNT_ID + '/media_publish'}}",
+        "sendBody": true,
+        "contentType": "form-urlencoded",
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "creation_id",
+              "value": "={{$('Create Instagram Reel container').item.json.id}}"
+            },
+            {
+              "name": "access_token",
+              "value": "={{$env.INSTAGRAM_ACCESS_TOKEN}}"
+            }
+          ]
+        },
+        "options": {
+          "timeout": 60000
+        }
+      }
+    },
+    {
+      "id": "yt-callback",
+      "name": "Callback - YouTube published",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2380,
+        180
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "={{$('Build public video URL').item.json.callback.url}}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "x-publishing-callback-secret",
+              "value": "={{$env.N8N_PUBLISHING_CALLBACK_SECRET}}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "json",
+        "specifyBody": "json",
+        "jsonBody": "={{ { ownerId:$('Build public video URL').item.json.ownerId, ideaId:$('Build public video URL').item.json.ideaId, platform:'youtube', status:'published', platformPostId:$json.id, publishedUrl:'https://www.youtube.com/watch?v='+$json.id } }}",
+        "options": {
+          "timeout": 30000
+        }
+      }
+    },
+    {
+      "id": "ig-callback",
+      "name": "Callback - Instagram published",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2620,
+        440
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "={{$('Build public video URL').item.json.callback.url}}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "x-publishing-callback-secret",
+              "value": "={{$env.N8N_PUBLISHING_CALLBACK_SECRET}}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "json",
+        "specifyBody": "json",
+        "jsonBody": "={{ { ownerId:$('Build public video URL').item.json.ownerId, ideaId:$('Build public video URL').item.json.ideaId, platform:'instagram', status:'published', platformPostId:$json.id, publishedUrl:'https://www.instagram.com/' } }}",
+        "options": {
+          "timeout": 30000
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Publishing schedule webhook": {
+      "main": [
+        [
+          {
+            "node": "Validate and split platform targets",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validate and split platform targets": {
+      "main": [
+        [
+          {
+            "node": "Wait until platform schedule",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Wait until platform schedule": {
+      "main": [
+        [
+          {
+            "node": "Callback - publishing started",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Callback - publishing started": {
+      "main": [
+        [
+          {
+            "node": "Create temporary Supabase video URL",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Create temporary Supabase video URL": {
+      "main": [
+        [
+          {
+            "node": "Build public video URL",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build public video URL": {
+      "main": [
+        [
+          {
+            "node": "Route by platform",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Route by platform": {
+      "main": [
+        [
+          {
+            "node": "Download video for YouTube",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Create Instagram Reel container",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Download video for YouTube": {
+      "main": [
+        [
+          {
+            "node": "Upload YouTube video",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Upload YouTube video": {
+      "main": [
+        [
+          {
+            "node": "Callback - YouTube published",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Create Instagram Reel container": {
+      "main": [
+        [
+          {
+            "node": "Wait for Instagram processing",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Wait for Instagram processing": {
+      "main": [
+        [
+          {
+            "node": "Publish Instagram Reel",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Publish Instagram Reel": {
+      "main": [
+        [
+          {
+            "node": "Callback - Instagram published",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "saveManualExecutions": true
+  },
+  "pinData": {},
+  "meta": {
+    "templateCredsSetupCompleted": false
+  },
+  "tags": []
+}
