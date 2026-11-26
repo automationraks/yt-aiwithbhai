@@ -55,7 +55,7 @@ async function getInstagram(db: Awaited<ReturnType<typeof createSupabaseServerCl
   const token = decryptToken(data.encrypted_page_access_token);
   const version = process.env.META_GRAPH_VERSION || "v25.0";
   const url = new URL("https://graph.facebook.com/" + version + "/" + data.instagram_user_id);
-  url.searchParams.set("fields", "username,followers_count,follows_count,media_count,media.limit(10){id,caption,media_type,permalink,timestamp,like_count,comments_count,views}");
+  url.searchParams.set("fields", "username,followers_count,follows_count,media_count,media.limit(10){id,caption,media_type,permalink,timestamp,like_count,comments_count}");
   url.searchParams.set("access_token", token);
   const response = await fetch(url, { cache: "no-store", signal: AbortSignal.timeout(20000) });
   const result = await response.json();
