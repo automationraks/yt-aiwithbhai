@@ -29,7 +29,7 @@ export async function GET(request:NextRequest){
  const secret=process.env.CRON_SECRET;if(!secret||request.headers.get("authorization")!== "Bearer "+secret)return NextResponse.json({error:"Unauthorized"},{status:401});
  const db=createSupabaseAdminClient(),date=localDate();const {data:users,error}=await db.from("app_users").select("id");
  if(error)return NextResponse.json({error:"Could not load account owners.",details:error.message},{status:500});
- let yt:any=null,ytError:string|null=null;try{yt=await youtubeSnapshot()}catch(e){ytError=e instanceof Error?e.message:"YouTube snapshot failed."}
+ let yt:Awaited<ReturnType<typeof youtubeSnapshot>>|null=null,ytError:string|null=null;try{yt=await youtubeSnapshot()}catch(e){ytError=e instanceof Error?e.message:"YouTube snapshot failed."}
  const saved:string[]=[],failed:Array<{ownerId:string;platform:string;error:string}>=[];
  for(const user of users??[]){
   if(yt){const {error:e}=await db.from("channel_metric_snapshots").upsert({owner_id:user.id,platform:"youtube",snapshot_date:date,...yt,source:"scheduled_live_api"},{onConflict:"owner_id,platform,snapshot_date"});if(e)failed.push({ownerId:user.id,platform:"youtube",error:e.message});else saved.push(user.id+":youtube");}
