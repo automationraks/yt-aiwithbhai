@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { ArrowLeft, Copy, ExternalLink, Loader2, Save } from "lucide-react";
 
+type WeeklyReport = { title?: string; summary?: string; generatedBy?: string; generatedAt?: string; recommendations?: string[] };
 type Profile = {
   display_name: string; bio: string; category: string; website_url: string;
   brand_pillars: string[]; voice_guidelines: string; color_palette: string[]; profile_image_url: string;
@@ -25,7 +26,7 @@ export default function BrandIdentityPage() {
   const [notice,setNotice] = useState("");
   const [pillars,setPillars] = useState("AI Tools, AI Agents, Automation, Tutorials, Projects");
   const [palette,setPalette] = useState("#090D14, #111925, #22D3EE, #A78BFA, #F8FAFC");
-  const [weeklyReport,setWeeklyReport] = useState<any>(null);
+  const [weeklyReport,setWeeklyReport] = useState<WeeklyReport|null>(null);
   useEffect(()=>{(async()=>{try{const r=await fetch("/api/brand-identity",{cache:"no-store"});const d=await r.json();if(!r.ok)throw new Error(d.error||"Could not load brand settings.");const p={...initial,...d.profile};setProfile(p);setPillars((p.brand_pillars||[]).join(", "));setPalette((p.color_palette||[]).join(", "));const growth=await fetch("/api/channel-analytics/history",{cache:"no-store"});if(growth.ok){const gd=await growth.json();setWeeklyReport(gd.reports?.[0]?.report??null);}}catch(e){setError(e instanceof Error?e.message:"Could not load brand settings.");}finally{setLoading(false);}})();},[]);
   function update<K extends keyof Profile>(key:K,value:Profile[K]){setProfile(p=>({...p,[key]:value}));}
   async function save(){setSaving(true);setError("");setNotice("");try{const r=await fetch("/api/brand-identity",{method:"PUT",headers:{"Content-Type":"application/json"},body:JSON.stringify({...profile,brand_pillars:pillars.split(",").map(x=>x.trim()).filter(Boolean),color_palette:palette.split(",").map(x=>x.trim()).filter(Boolean)})});const d=await r.json();if(!r.ok)throw new Error(d.error||"Could not save brand identity.");setProfile({...initial,...d.profile});setNotice("Brand identity saved in Supabase.");}catch(e){setError(e instanceof Error?e.message:"Could not save brand identity.");}finally{setSaving(false);}}
