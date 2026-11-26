@@ -11,7 +11,7 @@ function trend(rows:Snapshot[],platform:"youtube"|"instagram",from:string,to:str
  const first=list[0],last=list[list.length-1],audienceKey=platform==="youtube"?"subscribers":"followers";
  const startAudience=value(first[audienceKey]),endAudience=value(last[audienceKey]);
  const recentViews=value(last.recent_views),recentLikes=value(last.recent_likes),recentComments=value(last.recent_comments);
- return {available:true,platform,days:list.length,currentAudience:endAudience,audienceChange:endAudience-startAudience,audienceChangePercent:startAudience?((endAudience-startAudience)/startAudience)*100:null,totalViews:value(last.total_views)-value(first.total_views),recentViews,recentLikes,recentComments,engagementRate:recentViews?((recentLikes+recentComments)/recentViews)*100:0,history:list};
+ return {available:true,platform,days:list.length,currentAudience:endAudience,audienceChange:list.length>1?endAudience-startAudience:null,audienceChangePercent:list.length>1&&startAudience?((endAudience-startAudience)/startAudience)*100:null,totalViews:value(last.total_views)-value(first.total_views),recentViews,recentLikes,recentComments,engagementRate:recentViews?((recentLikes+recentComments)/recentViews)*100:0,history:list};
 }
 async function auth(){
  const db=await createSupabaseServerClient();if(!db)return {error:NextResponse.json({error:"Supabase is not configured."},{status:503})};
