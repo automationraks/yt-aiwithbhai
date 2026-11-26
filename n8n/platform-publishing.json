@@ -277,11 +277,11 @@
     },
     {
       "id": "ig-wait",
-      "name": "Wait for Instagram processing",
+      "name": "Initial Instagram processing wait",
       "type": "n8n-nodes-base.wait",
       "typeVersion": 1.1,
       "position": [
-        2140,
+        2120,
         440
       ],
       "parameters": {
@@ -375,6 +375,216 @@
         "contentType": "json",
         "specifyBody": "json",
         "jsonBody": "={{ { ownerId:$('Build public video URL').item.json.ownerId, ideaId:$('Build public video URL').item.json.ideaId, platform:'instagram', status:'published', platformPostId:$json.id, publishedUrl:'https://www.instagram.com/' } }}",
+        "options": {
+          "timeout": 30000
+        }
+      }
+    },
+    {
+      "id": "ig-poll-start",
+      "name": "Initialize Instagram processing poll",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2120,
+        600
+      ],
+      "parameters": {
+        "jsCode": "return [{json:{...$json,creationId:$json.id,pollAttempt:1}}];"
+      }
+    },
+    {
+      "id": "ig-status",
+      "name": "Check Instagram Reel processing",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2360,
+        600
+      ],
+      "parameters": {
+        "method": "GET",
+        "url": "={{'https://graph.facebook.com/' + ($env.META_GRAPH_API_VERSION || 'v24.0') + '/' + $json.creationId}}",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "fields",
+              "value": "status_code"
+            },
+            {
+              "name": "access_token",
+              "value": "={{$env.INSTAGRAM_ACCESS_TOKEN}}"
+            }
+          ]
+        },
+        "options": {
+          "timeout": 30000
+        }
+      }
+    },
+    {
+      "id": "ig-evaluate",
+      "name": "Evaluate Instagram processing status",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2600,
+        600
+      ],
+      "parameters": {
+        "jsCode": "const wait=$('Wait before Instagram status check').item.json; const status=$json.status_code; return [{json:{...$('Build public video URL').item.json,creationId:wait.creationId,pollAttempt:Number(wait.pollAttempt||1),statusCode:status}}];"
+      }
+    },
+    {
+      "id": "ig-status-switch",
+      "name": "Instagram processing result",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.2,
+      "position": [
+        2840,
+        600
+      ],
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{$json.statusCode}}",
+                    "rightValue": "FINISHED",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "finished"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{$json.statusCode}}",
+                    "rightValue": "ERROR",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "error"
+            }
+          ]
+        },
+        "options": {
+          "fallbackOutput": "extra"
+        }
+      }
+    },
+    {
+      "id": "ig-poll-limit",
+      "name": "Check Instagram poll limit",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        3080,
+        760
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "leftValue": "={{$json.pollAttempt}}",
+              "rightValue": 20,
+              "operator": {
+                "type": "number",
+                "operation": "lt"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "ig-poll-wait",
+      "name": "Wait before Instagram status check",
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1.1,
+      "position": [
+        3320,
+        760
+      ],
+      "parameters": {
+        "amount": 30,
+        "unit": "seconds"
+      }
+    },
+    {
+      "id": "ig-increment",
+      "name": "Increment Instagram poll attempt",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        3560,
+        760
+      ],
+      "parameters": {
+        "jsCode": "return [{json:{...$json,pollAttempt:Number($json.pollAttempt||1)+1}}];"
+      }
+    },
+    {
+      "id": "ig-failed-callback",
+      "name": "Callback - Instagram publishing failed",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        3320,
+        980
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "={{$('Build public video URL').item.json.callback.url}}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "x-publishing-callback-secret",
+              "value": "={{$env.N8N_PUBLISHING_CALLBACK_SECRET}}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "json",
+        "specifyBody": "json",
+        "jsonBody": "={{ { ownerId:$('Build public video URL').item.json.ownerId, ideaId:$('Build public video URL').item.json.ideaId, platform:'instagram', status:'failed', error:$json.statusCode==='ERROR'?'Instagram rejected Reel processing':'Instagram processing timed out after 20 checks' } }}",
         "options": {
           "timeout": 30000
         }
@@ -492,7 +702,7 @@
       "main": [
         [
           {
-            "node": "Wait for Instagram processing",
+            "node": "Initialize Instagram processing poll",
             "type": "main",
             "index": 0
           }
@@ -515,6 +725,115 @@
         [
           {
             "node": "Callback - Instagram published",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Initialize Instagram processing poll": {
+      "main": [
+        [
+          {
+            "node": "Initial Instagram processing wait",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Initial Instagram processing wait": {
+      "main": [
+        [
+          {
+            "node": "Check Instagram Reel processing",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check Instagram Reel processing": {
+      "main": [
+        [
+          {
+            "node": "Evaluate Instagram processing status",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Evaluate Instagram processing status": {
+      "main": [
+        [
+          {
+            "node": "Instagram processing result",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Instagram processing result": {
+      "main": [
+        [
+          {
+            "node": "Publish Instagram Reel",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Callback - Instagram publishing failed",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Check Instagram poll limit",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check Instagram poll limit": {
+      "main": [
+        [
+          {
+            "node": "Increment Instagram poll attempt",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Callback - Instagram publishing failed",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Increment Instagram poll attempt": {
+      "main": [
+        [
+          {
+            "node": "Wait before Instagram status check",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Wait before Instagram status check": {
+      "main": [
+        [
+          {
+            "node": "Check Instagram Reel processing",
             "type": "main",
             "index": 0
           }
