@@ -4,13 +4,13 @@ export const runtime="nodejs";
 export const dynamic="force-dynamic";
 type Snapshot={platform:string;snapshot_date:string;followers:number|null;subscribers:number|null;total_views:number|null;media_count:number|null;video_count:number|null;recent_views:number|null;recent_likes:number|null;recent_comments:number|null;engagement_rate:number|null};
 const value=(v:number|null|undefined)=>Number(v??0);
-const date=(d:Date)=>d.toISOString().slice(0,10);
+const date=(d:Date)=>new Intl.DateTimeFormat("en-CA",{timeZone:"Asia/Kolkata",year:"numeric",month:"2-digit",day:"2-digit"}).format(d);
 function trend(rows:Snapshot[],platform:"youtube"|"instagram",from:string,to:string){
  const list=rows.filter(x=>x.platform===platform&&x.snapshot_date>=from&&x.snapshot_date<=to).sort((a,b)=>a.snapshot_date.localeCompare(b.snapshot_date));
  if(!list.length)return {available:false,platform,days:0,currentAudience:null,audienceChange:null,audienceChangePercent:null,totalViews:value(null),recentViews:0,recentLikes:0,recentComments:0,engagementRate:0,history:[]};
  const first=list[0],last=list[list.length-1],audienceKey=platform==="youtube"?"subscribers":"followers";
  const startAudience=value(first[audienceKey]),endAudience=value(last[audienceKey]);
- const recentViews=list.reduce((s,x)=>s+value(x.recent_views),0),recentLikes=list.reduce((s,x)=>s+value(x.recent_likes),0),recentComments=list.reduce((s,x)=>s+value(x.recent_comments),0);
+ const recentViews=value(last.recent_views),recentLikes=value(last.recent_likes),recentComments=value(last.recent_comments);
  return {available:true,platform,days:list.length,currentAudience:endAudience,audienceChange:endAudience-startAudience,audienceChangePercent:startAudience?((endAudience-startAudience)/startAudience)*100:null,totalViews:value(last.total_views)-value(first.total_views),recentViews,recentLikes,recentComments,engagementRate:recentViews?((recentLikes+recentComments)/recentViews)*100:0,history:list};
 }
 async function auth(){
