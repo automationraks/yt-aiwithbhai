@@ -72,5 +72,26 @@ export async function GET() {
   const results = await Promise.allSettled([getYouTube(), getInstagram(db, user.id)]);
   const youtube = results[0].status === "fulfilled" ? results[0].value : { connected: false, error: results[0].reason instanceof Error ? results[0].reason.message : "YouTube analytics unavailable." };
   const instagram = results[1].status === "fulfilled" ? results[1].value : { connected: false, error: results[1].reason instanceof Error ? results[1].reason.message : "Instagram analytics unavailable." };
-  return NextResponse.json({ youtube, instagram, fetchedAt: new Date().toISOString() }, { headers: { "Cache-Control": "no-store" } });
+  const localDate = new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Kolkata", year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date());
+  const snapshots: Array<Record<string, unknown>> = [];
+  if (youtube.connected && "channel" in youtube && youtube.channel) {
+    const videos = youtube.recentVideos ?? [];
+    const recentViews = videos.reduce((sum, video) => sum + Number(video.views ?? 0), 0);
+    const recentLikes = videos.reduce((sum, video) => sum + Number(video.likes ?? 0), 0);
+    const recentComments = videos.reduce((sum, video) => sum + Number(video.comments ?? 0), 0);
+    snapshots.push({ owner_id: user.id, platform: "youtube", snapshot_date: localDate, subscribers: youtube.channel.subscribers, total_views: youtube.channel.totalViews, video_count: youtube.channel.videos, media_count: youtube.channel.videos, recent_views: recentViews, recent_likes: recentLikes, recent_comments: recentComments, engagement_rate: recentViews ? ((recentLikes + recentComments) / recentViews) * 100 : 0, source: "live_api", metadata: { channel_id: youtube.channel.id } });
+  }
+  if (instagram.connected && "account" in instagram && instagram.account) {
+    const media = instagram.recentMedia ?? [];
+    const recentViews = media.reduce((sum, item) => sum + Number(item.views ?? 0), 0);
+    const recentLikes = media.reduce((sum, item) => sum + Number(item.likes ?? 0), 0);
+    const recentComments = media.reduce((sum, item) => sum + Number(item.comments ?? 0), 0);
+    snapshots.push({ owner_id: user.id, platform: "instagram", snapshot_date: localDate, followers: instagram.account.followers, media_count: instagram.account.mediaCount, recent_views: recentViews, recent_likes: recentLikes, recent_comments: recentComments, engagement_rate: recentViews ? ((recentLikes + recentComments) / recentViews) * 100 : 0, source: "live_api", metadata: { username: instagram.account.username } });
+  }
+  let snapshotWarning: string | null = null;
+  if (snapshots.length) {
+    const { error: snapshotError } = await db.from("channel_metric_snapshots").upsert(snapshots, { onConflict: "owner_id,platform,snapshot_date" });
+    if (snapshotError) snapshotWarning = "Live metrics loaded, but historical snapshots could not be saved. Apply the channel growth intelligence migration.";
+  }
+  return NextResponse.json({ youtube, instagram, fetchedAt: new Date().toISOString(), snapshotDate: localDate, snapshotWarning }, { headers: { "Cache-Control": "no-store" } });
 }
