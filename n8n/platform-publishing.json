@@ -228,7 +228,7 @@
         "categoryId": "28",
         "binaryPropertyName": "data",
         "options": {
-          "privacyStatus": "private"
+          "privacyStatus": "public"
         }
       }
     },
