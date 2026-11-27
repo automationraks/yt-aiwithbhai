@@ -2,7 +2,7 @@
 create table if not exists public.content_opportunity_scores (
  id uuid primary key default gen_random_uuid(),
  owner_id uuid not null references public.app_users(id) on delete cascade,
- workspace_id uuid not null references public.channel_workspaces(id,owner_id) on delete cascade,
+ workspace_id uuid not null references public.channel_workspaces(id) on delete cascade,
  report_date date not null default current_date,
  topic text not null,
  title text not null,
@@ -23,7 +23,7 @@ create index if not exists content_opportunity_scores_rank_idx
 create table if not exists public.scene_asset_jobs (
  id uuid primary key default gen_random_uuid(),
  owner_id uuid not null references public.app_users(id) on delete cascade,
- workspace_id uuid not null references public.channel_workspaces(id,owner_id) on delete cascade,
+ workspace_id uuid not null references public.channel_workspaces(id) on delete cascade,
  idea_id uuid not null references public.content_ideas(id) on delete cascade,
  sequence integer not null check(sequence > 0),
  prompt text not null,
@@ -43,7 +43,7 @@ create index if not exists scene_asset_jobs_queue_idx on public.scene_asset_jobs
 create table if not exists public.platform_analytics_imports (
  id uuid primary key default gen_random_uuid(),
  owner_id uuid not null references public.app_users(id) on delete cascade,
- workspace_id uuid not null references public.channel_workspaces(id,owner_id) on delete cascade,
+ workspace_id uuid not null references public.channel_workspaces(id) on delete cascade,
  platform text not null check(platform in ('youtube','instagram')),
  account_id uuid references public.channel_accounts(id) on delete set null,
  report_date date not null,
