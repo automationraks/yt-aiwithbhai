@@ -17,7 +17,7 @@ export async function POST(_req:Request,ctx:{params:Promise<{id:string}>}){
  if(ideaError||!idea?.video_storage_path)return NextResponse.json({error:"The rendered video is no longer available. It cannot be retried."},{status:409});
  const webhook=process.env.N8N_PUBLISHING_WEBHOOK_URL;if(!webhook)return NextResponse.json({error:"N8N_PUBLISHING_WEBHOOK_URL is not configured."},{status:503});
  const now=new Date().toISOString();
- const {data:updated,error:updateError}=await db.from("publishing_targets").update({status:"scheduled",scheduled_at:now,dispatch_status:"pending",error_message:null,updated_at:now}).eq("id",id).eq("owner_id",user.id).eq("status","failed").select("*").single();
+ const {data:updated,error:updateError}=await db.from("publishing_targets").update({status:"scheduled",scheduled_at:now,dispatch_status:"pending",error_message:null,updated_at:now}).eq("id",id).eq("owner_id",user.id).eq("channel_workspace_id",ws.id).eq("status","failed").select("*").single();
  if(updateError||!updated)return NextResponse.json({error:"Could not requeue publishing target.",details:updateError?.message},{status:500});
  try{
   const response=await fetch(webhook,{method:"POST",headers:{"Content-Type":"application/json",...(process.env.N8N_WEBHOOK_SECRET?{"x-webhook-secret":process.env.N8N_WEBHOOK_SECRET}:{})},body:JSON.stringify({event:"video_scheduled",ownerId:user.id,idea:{id:idea.id,title:idea.title,videoStoragePath:idea.video_storage_path,approvedScript:idea.script_package?.voiceover??idea.script_package?.script??"",durationSeconds:idea.target_duration_seconds},targets:[{id:updated.id,platform:updated.platform,scheduledAt:now,status:"scheduled"}],callback:{url:(process.env.NEXT_PUBLIC_APP_URL??"").replace(/\/$/,"")+"/api/publishing-schedule/callback",secretHeader:"x-publishing-callback-secret"}}),signal:AbortSignal.timeout(15000)});
@@ -34,6 +34,7 @@ export async function POST(_req:Request,ctx:{params:Promise<{id:string}>}){
 export async function DELETE(_req:Request,ctx:{params:Promise<{id:string}>}){
  const db=await createSupabaseServerClient();if(!db)return NextResponse.json({error:"Supabase is not configured."},{status:503});
  const {data:{user},error:authError}=await db.auth.getUser();if(authError||!user)return NextResponse.json({error:"Unauthorized."},{status:401});
+ const ws=await getActiveWorkspace(db,user.id);if(!ws)return NextResponse.json({error:"Create a workspace first."},{status:409});
  const {id}=await ctx.params;const {data:target,error}=await db.from("publishing_targets").select("id,idea_id,status,dispatch_status").eq("id",id).eq("owner_id",user.id).maybeSingle();
  if(error||!target)return NextResponse.json({error:"Publishing target not found."},{status:404});
  if(target.status!=="scheduled"||target.dispatch_status==="sent")return NextResponse.json({error:"This target has already been dispatched to n8n. Cancel its active execution in n8n before changing its state; this API will not claim to stop an in-flight workflow."},{status:409});
