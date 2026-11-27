@@ -75,13 +75,13 @@ export async function GET() {
       longForm: { count: longVideos.length, averageViews: longVideos.length ? Math.round(longVideos.reduce((sum, video) => sum + Number(video.view_count ?? 0), 0) / longVideos.length) : 0 },
     };
     const topicRules = [
-      ["RAG & retrieval", /\\b(rag|retrieval|embedding|vector database|vector db|semantic search)\\b/i],
-      ["AI agents", /\\b(agent|agentic|multi-agent|tool calling|orchestration)\\b/i],
-      ["AI architecture", /\\b(architecture|system design|enterprise|copilot|workflow)\\b/i],
-      ["LLMOps & evaluation", /\\b(llmops|evaluation|observability|tracing|monitoring|benchmark)\\b/i],
-      ["Inference & infrastructure", /\\b(inference|serving|gpu|quantization|vllm|latency)\\b/i],
-      ["AI security", /\\b(security|guardrail|safety|governance|prompt injection)\\b/i],
-      ["AI developer tools", /\\b(api|sdk|framework|langchain|llamaindex|developer tool|coding assistant)\\b/i],
+      ["RAG & retrieval", /\b(rag|retrieval|embedding|vector database|vector db|semantic search)\b/i],
+      ["AI agents", /\b(agent|agentic|multi-agent|tool calling|orchestration)\b/i],
+      ["AI architecture", /\b(architecture|system design|enterprise|copilot|workflow)\b/i],
+      ["LLMOps & evaluation", /\b(llmops|evaluation|observability|tracing|monitoring|benchmark)\b/i],
+      ["Inference & infrastructure", /\b(inference|serving|gpu|quantization|vllm|latency)\b/i],
+      ["AI security", /\b(security|guardrail|safety|governance|prompt injection)\b/i],
+      ["AI developer tools", /\b(api|sdk|framework|langchain|llamaindex|developer tool|coding assistant)\b/i],
     ] as const;
     const topicBreakdown = topicRules.map(([topic, pattern]) => {
       const matches = videos.filter(video => pattern.test((video.title ?? "") + " " + (video.description ?? "")));
