@@ -13,7 +13,8 @@ async function getYouTube() {
   if (!key) return { connected: false, error: "YOUTUBE_API_KEY is not configured." };
   const base = "https://www.googleapis.com/youtube/v3/";
   const channelUrl = new URL(base + "channels");
-  channelUrl.search = new URLSearchParams({ part: "snippet,statistics,contentDetails", forHandle: "AiWithBhai-ytb", key }).toString();
+  const channelHandle = (process.env.YOUTUBE_CHANNEL_HANDLE || "AiWithBhai-ytb").replace(/^@/, "").trim();
+  channelUrl.search = new URLSearchParams({ part: "snippet,statistics,contentDetails", forHandle: channelHandle, key }).toString();
   const channelResponse = await fetch(channelUrl, { cache: "no-store", signal: AbortSignal.timeout(15000) });
   const channelData = await channelResponse.json();
   if (!channelResponse.ok) throw new Error(channelData.error?.message || "YouTube channel lookup failed.");
@@ -24,9 +25,31 @@ async function getYouTube() {
   if (uploads) {
     const playlistUrl = new URL(base + "playlistItems");
     playlistUrl.search = new URLSearchParams({ part: "snippet,contentDetails", playlistId: uploads, maxResults: "10", key }).toString();
-    const playlistResponse = await fetch(playlistUrl, { cache: "no-store", signal: AbortSignal.timeout(15000) });
-    const playlistData = await playlistResponse.json();
-    if (!playlistResponse.ok) throw new Error(playlistData.error?.message || "Could not load YouTube uploads.");
+    let playlistResponse = await fetch(playlistUrl, { cache: "no-store", signal: AbortSignal.timeout(15000) });
+    let playlistData = await playlistResponse.json();
+    // A channel lookup can occasionally return stale uploads-playlist metadata.
+    // Re-resolve the channel by its immutable channel ID once before surfacing
+    // playlistNotFound; this avoids masking a genuine API/configuration issue.
+    if (!playlistResponse.ok && playlistData?.error?.errors?.some((item: { reason?: string }) => item.reason === "playlistNotFound")) {
+      const refreshUrl = new URL(base + "channels");
+      refreshUrl.search = new URLSearchParams({ part: "contentDetails", id: channel.id, key }).toString();
+      const refreshResponse = await fetch(refreshUrl, { cache: "no-store", signal: AbortSignal.timeout(15000) });
+      const refreshData = await refreshResponse.json();
+      const refreshedUploads = refreshData.items?.[0]?.contentDetails?.relatedPlaylists?.uploads;
+      if (refreshResponse.ok && refreshedUploads) {
+        playlistUrl.search = new URLSearchParams({ part: "snippet,contentDetails", playlistId: refreshedUploads, maxResults: "10", key }).toString();
+        playlistResponse = await fetch(playlistUrl, { cache: "no-store", signal: AbortSignal.timeout(15000) });
+        playlistData = await playlistResponse.json();
+      }
+    }
+    if (!playlistResponse.ok) {
+      const reason = playlistData?.error?.errors?.[0]?.reason;
+      const message = playlistData?.error?.message || "Could not load YouTube uploads.";
+      if (reason === "playlistNotFound") {
+        throw new Error(`YouTube returned an unavailable uploads playlist for channel ${channel.id}. Confirm YOUTUBE_CHANNEL_HANDLE points to the intended public channel and that its uploads playlist is accessible. API detail: ${message}`);
+      }
+      throw new Error(message);
+    }
     const ids = (playlistData.items ?? []).map((item: { contentDetails?: { videoId?: string } }) => item.contentDetails?.videoId).filter(Boolean);
     if (ids.length) {
       const videosUrl = new URL(base + "videos");
