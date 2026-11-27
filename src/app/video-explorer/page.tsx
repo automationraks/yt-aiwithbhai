@@ -42,7 +42,16 @@ export default function VideoExplorerPage() {
   useEffect(() => { void load(); }, [load]);
 
   async function addManual(){setSavingManual(true);setError("");setMessage("");try{const response=await fetch("/api/video-explorer",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({action:"add_manual_link",url:manualUrl,title:manualTitle})});const result=await response.json();if(!response.ok)throw new Error(result.error||"Could not add video link.");setMessage(result.alreadyShortlisted?"This link is already in your shortlist.":"Manual video link added to Video Explorer.");setManualUrl("");setManualTitle("");await load();}catch(e){setError(e instanceof Error?e.message:"Could not add link.");}finally{setSavingManual(false);}}
-  async function shortlist(video: VideoRow) {\n    setError(""); setMessage("");\n    try {\n      const response = await fetch("/api/video-explorer", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "shortlist", platform: video.platform ?? "youtube", externalVideoId: video.external_video_id ?? video.youtube_video_id, permalink: video.permalink ?? video.video_url, title: video.title, description: video.description, thumbnailUrl: video.thumbnail_url, channelName: video.channelTitle, channelUrl: video.channelUrl, publishedAt: video.published_at, sourceFeature: video.platform === "instagram" ? "instagram_discovery" : "competitor_explorer" }) });\n      const result = await response.json(); if (!response.ok) throw new Error(result.error || "Could not shortlist video.");\n      setMessage(result.alreadyShortlisted ? "This video is already shortlisted." : "Video added to your shortlist."); await load();\n    } catch (e) { setError(e instanceof Error ? e.message : "Could not shortlist video."); }\n  }\n\n  async function refresh() {
+  async function shortlist(video: VideoRow) {
+    setError(""); setMessage("");
+    try {
+      const response = await fetch("/api/video-explorer", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "shortlist", platform: video.platform ?? "youtube", externalVideoId: video.external_video_id ?? video.youtube_video_id, permalink: video.permalink ?? video.video_url, title: video.title, description: video.description, thumbnailUrl: video.thumbnail_url, channelName: video.channelTitle, channelUrl: video.channelUrl, publishedAt: video.published_at, sourceFeature: video.platform === "instagram" ? "instagram_discovery" : "competitor_explorer" }) });
+      const result = await response.json(); if (!response.ok) throw new Error(result.error || "Could not shortlist video.");
+      setMessage(result.alreadyShortlisted ? "This video is already shortlisted." : "Video added to your shortlist."); await load();
+    } catch (e) { setError(e instanceof Error ? e.message : "Could not shortlist video."); }
+  }
+
+  async function refresh() {
     setRefreshing(true); setError(""); setMessage("");
     try {
       const response = await fetch("/api/competitors/intelligence/refresh", { method: "POST" });
