@@ -17,6 +17,14 @@ const emptySummary: Summary = { activeChannels: 0, matchedVideos: 0, totalViews:
 function compact(value: number) { return new Intl.NumberFormat("en", { notation: "compact", maximumFractionDigits: 1 }).format(value); }
 function dateLabel(value: string | null) { return value ? new Date(value).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" }) : "Date unavailable"; }
 
+function VideoThumbnail({ src, href, title }: { src: string; href: string; title: string }) {
+  const [failed, setFailed] = useState(false);
+  return <a href={href || "#"} target="_blank" rel="noreferrer" aria-label={`Open ${title}`} className="block w-full shrink-0 overflow-hidden rounded-lg bg-slate-900 md:w-48">
+    {failed ? <div className="flex aspect-video w-full items-center justify-center gap-2 text-xs text-slate-500"><Video size={18}/>Thumbnail unavailable</div> :
+      <Image src={src} alt={title ? `Thumbnail for ${title}` : "Video thumbnail"} width={384} height={216} unoptimized onError={() => setFailed(true)} className="aspect-video w-full object-cover"/>}
+  </a>;
+}
+
 export default function VideoExplorerPage() {
   const [videos, setVideos] = useState<VideoRow[]>([]);
   const [summary, setSummary] = useState<Summary>(emptySummary);
@@ -79,7 +87,7 @@ export default function VideoExplorerPage() {
 
     <section className="overflow-hidden rounded-xl border border-slate-800 bg-[#111925]"><div className="border-b border-slate-800 px-5 py-4"><h2 className="text-sm font-semibold">Videos matching AIWithBh@i niche</h2><p className="mt-1 text-xs text-slate-400">Sorted by latest publication date · AI relevance threshold 81/100</p></div>
       {loading ? <div className="p-12 text-center text-sm text-slate-400"><Loader2 size={18} className="mx-auto mb-2 animate-spin"/>Loading niche-matched videos...</div> : videos.length === 0 ? <div className="p-12 text-center"><Video size={24} className="mx-auto mb-3 text-slate-600"/><p className="text-sm font-medium">No niche-matched videos saved yet</p><p className="mt-1 text-xs text-slate-500">Approve channels in <Link href="/competitors" className="text-cyan-300 underline">Creator Explorer</Link>, then run Refresh videos & metrics.</p></div> : <div className="divide-y divide-slate-800">{videos.map((video) => <article key={video.platform+":"+String(video.external_video_id??video.youtube_video_id)} className="flex flex-col gap-4 p-4 md:flex-row">
-        {video.thumbnail_url && <a href={video.permalink ?? video.video_url ?? "#"} target="_blank" rel="noreferrer" className="block w-full shrink-0 overflow-hidden rounded-lg bg-slate-900 md:w-48"><Image src={video.thumbnail_url} alt="" width={384} height={216} sizes="(max-width: 768px) 100vw, 192px" className="aspect-video w-full object-cover"/></a>}
+        {video.thumbnail_url && <VideoThumbnail src={video.thumbnail_url} href={video.permalink ?? video.video_url ?? "#"} title={video.title}/>}
         <div className="min-w-0 flex-1"><div className="flex flex-wrap items-center gap-2"><span className="rounded-full bg-emerald-500/10 px-2 py-1 text-[10px] text-emerald-300">Niche match · {video.niche_relevance_score ?? "—"}/100</span><span className="rounded-full bg-slate-700 px-2 py-1 text-[10px] text-slate-300">{video.platform==="instagram"?"Instagram":video.is_short?"Short":"Long-form"}</span><span className="rounded-full bg-slate-700 px-2 py-1 text-[10px] text-slate-300">{video.is_shortlisted?"Shortlisted":video.source_feature??"Historical"}</span><span className="text-[10px] text-slate-500">{dateLabel(video.published_at)}</span></div>
           <a href={video.permalink ?? video.video_url ?? "#"} target="_blank" rel="noreferrer" className="mt-2 block text-sm font-semibold text-slate-100 hover:text-cyan-300">{video.title} <ExternalLink size={12} className="ml-1 inline"/></a>
           <div className="mt-1 text-xs text-slate-400">{video.channelUrl ? <a href={video.channelUrl} target="_blank" rel="noreferrer" className="hover:text-cyan-300">{video.channelTitle}</a> : video.channelTitle}</div>
