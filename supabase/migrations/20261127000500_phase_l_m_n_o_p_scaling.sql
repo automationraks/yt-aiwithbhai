@@ -63,7 +63,7 @@ create index if not exists platform_analytics_imports_date_idx
 
 -- Enforce workspace ownership with the composite key. This remains valid even
 -- when an existing channel_workspaces table has only the (id, owner_id) unique key.
-do $
+do $$
 begin
  if not exists (select 1 from pg_constraint where conname='content_opportunity_scores_workspace_owner_fkey' and conrelid='public.content_opportunity_scores'::regclass) then
   alter table public.content_opportunity_scores
@@ -83,7 +83,7 @@ begin
    foreign key (workspace_id,owner_id)
    references public.channel_workspaces(id,owner_id) on delete cascade;
  end if;
-end $;
+end $$;
 
 alter table public.content_intelligence_reports add column if not exists workspace_id uuid;
 alter table public.content_intelligence_reports drop constraint if exists content_intelligence_reports_owner_id_report_date_key;
