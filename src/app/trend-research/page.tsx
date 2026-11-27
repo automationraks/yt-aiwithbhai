@@ -3,8 +3,9 @@ import {useCallback,useEffect,useState} from "react";
 import Link from "next/link";
 import {ArrowLeft,RefreshCw} from "lucide-react";
 type Signal={id:string;topic:string;title:string;source_url:string;channel_title:string;published_at:string;views:number;demand_score:number;competition_score:number;saturation_score:number;opportunity_score:number};
+type ResearchRun={id:string;started_at:string;status:string;result_count:number|null;quota_units:number|null};
 export default function TrendResearchPage(){
- const [signals,setSignals]=useState<Signal[]>([]),[runs,setRuns]=useState<any[]>([]),[busy,setBusy]=useState(false),[error,setError]=useState(""),[message,setMessage]=useState("");
+ const [signals,setSignals]=useState<Signal[]>([]),[runs,setRuns]=useState<ResearchRun[]>([]),[busy,setBusy]=useState(false),[error,setError]=useState(""),[message,setMessage]=useState("");
  const load=useCallback(async()=>{try{const r=await fetch("/api/trend-research",{cache:"no-store"}),d=await r.json();if(!r.ok)throw new Error(d.error);setSignals(d.signals||[]);setRuns(d.runs||[]);}catch(e){setError(e instanceof Error?e.message:"Load failed");}},[]);
  useEffect(()=>{void load();},[load]);
  async function research(){setBusy(true);setError("");try{const r=await fetch("/api/trend-research",{method:"POST",headers:{"Content-Type":"application/json"},body:"{}"}),d=await r.json();if(!r.ok)throw new Error(d.error);setMessage(d.resultCount+" records · "+d.quotaUnits+" estimated quota units");await load();}catch(e){setError(e instanceof Error?e.message:"Research failed");}finally{setBusy(false);}}
