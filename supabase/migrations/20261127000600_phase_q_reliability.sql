@@ -5,6 +5,10 @@ alter table public.video_render_jobs
   add column if not exists last_heartbeat_at timestamptz,
   add column if not exists max_attempts integer not null default 3;
 
+update public.video_render_jobs
+   set lease_expires_at = coalesce(started_at, created_at) + interval '2 hours'
+ where status = 'processing' and lease_expires_at is null;
+
 create index if not exists video_render_jobs_lease_idx
   on public.video_render_jobs(status, lease_expires_at)
   where status = 'processing';
