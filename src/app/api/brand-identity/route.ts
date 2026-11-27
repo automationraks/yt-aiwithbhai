@@ -6,7 +6,11 @@ export const dynamic = "force-dynamic";
 
 const DEFAULTS = {
   brand_name: "AIWithBh@i",
-  instagram_username: "automationraks",
+  instagram_username: "aiwithbhaii",
+  instagram_profile_url: "https://www.instagram.com/aiwithbhaii/",
+  youtube_channel_name: "AIWithBh@i",
+  youtube_handle: "@AiWithBhai-ytb",
+  youtube_channel_url: "https://www.youtube.com/@AiWithBhai-ytb",
   display_name: "AIWithBh@i | AI Automation",
   bio: "Building with AI. Automating the future.\n\n🤖 AI Agents | AI Automation | AI Tools\n⚙️ Practical AI workflows & experiments\n🚀 Follow for real-world AI systems",
   category: "Digital Creator",
@@ -49,6 +53,11 @@ export async function PUT(request: Request) {
     const displayName = text("display_name", DEFAULTS.display_name, 80);
     const bio = text("bio", DEFAULTS.bio, 150);
     const website = text("website_url", DEFAULTS.website_url, 500);
+    const instagramUsername = text("instagram_username", DEFAULTS.instagram_username, 50).replace(/^@/, "");
+    const instagramProfileUrl = text("instagram_profile_url", DEFAULTS.instagram_profile_url, 500);
+    const youtubeChannelName = text("youtube_channel_name", DEFAULTS.youtube_channel_name, 100);
+    const youtubeHandle = text("youtube_handle", DEFAULTS.youtube_handle, 100);
+    const youtubeChannelUrl = text("youtube_channel_url", DEFAULTS.youtube_channel_url, 500);
     if (!displayName || !bio) throw new Error("Display name and bio are required.");
     if (website && !/^https?:\/\//i.test(website)) throw new Error("Website URL must start with http:// or https://.");
     const pillars = Array.isArray(body.brand_pillars) ? body.brand_pillars.map(String).map(x => x.trim()).filter(Boolean).slice(0, 12) : DEFAULTS.brand_pillars;
@@ -56,7 +65,11 @@ export async function PUT(request: Request) {
     payload = {
       owner_id: auth.user!.id,
       brand_name: "AIWithBh@i",
-      instagram_username: "automationraks",
+      instagram_username: instagramUsername,
+      instagram_profile_url: instagramProfileUrl || null,
+      youtube_channel_name: youtubeChannelName,
+      youtube_handle: youtubeHandle,
+      youtube_channel_url: youtubeChannelUrl || null,
       display_name: displayName,
       bio,
       category: text("category", DEFAULTS.category, 80),
