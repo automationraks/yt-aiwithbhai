@@ -55,7 +55,7 @@ async function getYouTube() {
       const feedResponse = await fetch(feedUrl, { cache: "no-store", signal: AbortSignal.timeout(15000) });
       if (feedResponse.ok) {
         const feedXml = await feedResponse.text();
-        const feedIds = [...feedXml.matchAll(/<yt:videoId>([^<]+)<\\/yt:videoId>/g)]
+        const feedIds = [...feedXml.matchAll(/<yt:videoId>([^<]+)<\/yt:videoId>/g)]
           .map((match) => match[1])
           .filter(Boolean)
           .slice(0, 10);
