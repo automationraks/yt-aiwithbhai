@@ -162,7 +162,7 @@ create index if not exists content_ideas_workspace_idx on public.content_ideas(o
 
 -- Publishing targets were introduced by migration 20261126000400.
 -- Keep this migration safe when that optional predecessor has not yet been applied.
-do $
+do $$
 begin
  if to_regclass('public.publishing_targets') is not null then
   alter table public.publishing_targets add column if not exists channel_workspace_id uuid;
@@ -172,7 +172,7 @@ begin
   create index if not exists publishing_targets_workspace_schedule_idx
    on public.publishing_targets(owner_id,channel_workspace_id,scheduled_at);
  end if;
-end $;
+end $$;
 
 -- Preserve the existing single-channel setup as each owner's initial workspace.
 insert into public.channel_workspaces(owner_id,name,slug,description,timezone,is_default)
@@ -186,7 +186,7 @@ set channel_workspace_id=w.id
 from public.channel_workspaces w
 where i.owner_id=w.owner_id and w.is_default and i.channel_workspace_id is null;
 
-do $
+do $$
 begin
  if to_regclass('public.publishing_targets') is not null then
   update public.publishing_targets p
@@ -194,7 +194,7 @@ begin
   from public.channel_workspaces w
   where p.owner_id=w.owner_id and w.is_default and p.channel_workspace_id is null;
  end if;
-end $;
+end $$;
 
 -- All writes are performed through the authenticated application session and server-side DB client.
 -- RLS remains enabled as defence in depth for direct database access.
