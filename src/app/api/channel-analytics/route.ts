@@ -27,9 +27,12 @@ async function getYouTube() {
     playlistUrl.search = new URLSearchParams({ part: "snippet,contentDetails", playlistId: uploads, maxResults: "10", key }).toString();
     let playlistResponse = await fetch(playlistUrl, { cache: "no-store", signal: AbortSignal.timeout(15000) });
     let playlistData = await playlistResponse.json();
-    // A channel lookup can occasionally return stale uploads-playlist metadata.
-    // Re-resolve the channel by its immutable channel ID once before surfacing
-    // playlistNotFound; this avoids masking a genuine API/configuration issue.
+    let playlistItems: Array<{ contentDetails?: { videoId?: string } }> | null = playlistResponse.ok
+      ? (playlistData.items ?? [])
+      : null;
+
+    // Retry once using the immutable channel ID if YouTube rejects the first
+    // uploads-playlist reference.
     if (!playlistResponse.ok && playlistData?.error?.errors?.some((item: { reason?: string }) => item.reason === "playlistNotFound")) {
       const refreshUrl = new URL(base + "channels");
       refreshUrl.search = new URLSearchParams({ part: "contentDetails", id: channel.id, key }).toString();
@@ -40,17 +43,34 @@ async function getYouTube() {
         playlistUrl.search = new URLSearchParams({ part: "snippet,contentDetails", playlistId: refreshedUploads, maxResults: "10", key }).toString();
         playlistResponse = await fetch(playlistUrl, { cache: "no-store", signal: AbortSignal.timeout(15000) });
         playlistData = await playlistResponse.json();
+        if (playlistResponse.ok) playlistItems = playlistData.items ?? [];
       }
     }
-    if (!playlistResponse.ok) {
+
+    // Last-resort public feed fallback: the channel RSS feed exposes recent
+    // public uploads without requiring the uploads playlist endpoint.
+    if (!playlistItems && playlistData?.error?.errors?.some((item: { reason?: string }) => item.reason === "playlistNotFound")) {
+      const feedUrl = new URL("https://www.youtube.com/feeds/videos.xml");
+      feedUrl.searchParams.set("channel_id", channel.id);
+      const feedResponse = await fetch(feedUrl, { cache: "no-store", signal: AbortSignal.timeout(15000) });
+      if (feedResponse.ok) {
+        const feedXml = await feedResponse.text();
+        const feedIds = [...feedXml.matchAll(/<yt:videoId>([^<]+)<\\/yt:videoId>/g)]
+          .map((match) => match[1])
+          .filter(Boolean)
+          .slice(0, 10);
+        playlistItems = feedIds.map((videoId) => ({ contentDetails: { videoId } }));
+      }
+    }
+    if (!playlistItems) {
       const reason = playlistData?.error?.errors?.[0]?.reason;
       const message = playlistData?.error?.message || "Could not load YouTube uploads.";
       if (reason === "playlistNotFound") {
-        throw new Error(`YouTube returned an unavailable uploads playlist for channel ${channel.id}. Confirm YOUTUBE_CHANNEL_HANDLE points to the intended public channel and that its uploads playlist is accessible. API detail: ${message}`);
+        throw new Error(`YouTube rejected the uploads playlist for channel ${channel.id}, and the public channel feed fallback could not be used. Verify the channel's public uploads and API project restrictions. API detail: ${message}`);
       }
       throw new Error(message);
     }
-    const ids = (playlistData.items ?? []).map((item: { contentDetails?: { videoId?: string } }) => item.contentDetails?.videoId).filter(Boolean);
+    const ids = playlistItems.map((item) => item.contentDetails?.videoId).filter((id: string | undefined): id is string => Boolean(id));
     if (ids.length) {
       const videosUrl = new URL(base + "videos");
       videosUrl.search = new URLSearchParams({ part: "snippet,statistics", id: ids.join(","), key }).toString();
