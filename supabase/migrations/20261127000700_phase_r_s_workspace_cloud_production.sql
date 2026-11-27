@@ -17,7 +17,7 @@ begin
    foreign key(workspace_id,owner_id) references public.channel_workspaces(id,owner_id) on delete cascade;
  end if;
 end $$;
-do $
+do $$
 declare c record;
 begin
  for c in
@@ -27,7 +27,7 @@ begin
  loop
   execute format('alter table public.competitors drop constraint %I',c.conname);
  end loop;
-end $;
+end $$;
 create unique index if not exists competitors_owner_workspace_channel_uidx
  on public.competitors(owner_id,workspace_id,youtube_channel_id);
 create index if not exists competitors_workspace_active_idx on public.competitors(owner_id,workspace_id,is_active,subscriber_count desc);
