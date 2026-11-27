@@ -19,6 +19,8 @@ export async function GET(request:NextRequest){
  if(error)return NextResponse.json({error:"Could not read schedules. Apply the automation schedule migration first.",details:error.message},{status:500});
  const now=new Date(),local=istParts(now),currentMinute=minutes(local.time),dispatched:string[]=[],failed:Array<{id:string;error:string}>=[];
  for(const schedule of schedules??[]){
+  const {data:controls}=await db.from("operations_controls").select("control_key,enabled").eq("owner_id",schedule.owner_id).in("control_key",["research_automation","content_generation"]);
+  if((controls??[]).some(x=>x.enabled===false))continue;
   const targetMinute=minutes(schedule.schedule_time);
   if(currentMinute<targetMinute||currentMinute>targetMinute+5)continue;
   const {data:claimed,error:claimError}=await db.rpc("claim_daily_content_schedule",{p_schedule_id:schedule.id,p_local_date:local.date});
