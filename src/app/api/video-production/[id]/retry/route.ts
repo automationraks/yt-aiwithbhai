@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
+import { createSupabaseAdminClient } from "@/lib/auth/session";
 import { logWorkflowEvent } from "@/lib/workflow-events";
 export const runtime="nodejs";
 export const dynamic="force-dynamic";
@@ -14,10 +15,11 @@ export async function POST(_request:Request,context:{params:Promise<{id:string}>
  if(ideaError||!idea)return NextResponse.json({error:"Video production record not found."},{status:404});
  if(idea.status!=="approved"||!idea.approved_script_hash)return NextResponse.json({error:"Only an already-approved, frozen script can be retried."},{status:409});
  if(!["failed","queued"].includes(String(idea.video_production_status)))return NextResponse.json({error:"Retry is available only for failed or queued production jobs."},{status:409});
- const {data:job,error:jobError}=await supabase.from("video_render_jobs").select("id,status,script_hash,attempts").eq("idea_id",id).eq("owner_id",user.id).eq("script_hash",idea.approved_script_hash).maybeSingle();
+ const admin=createSupabaseAdminClient();
+ const {data:job,error:jobError}=await admin.from("video_render_jobs").select("id,status,script_hash,attempts").eq("idea_id",id).eq("owner_id",user.id).eq("script_hash",idea.approved_script_hash).maybeSingle();
  if(jobError||!job)return NextResponse.json({error:"Original render job was not found."},{status:404});
  if(job.status==="processing"||job.status==="completed")return NextResponse.json({error:"This job is already processing or completed."},{status:409});
- const {error:updateJobError}=await supabase.from("video_render_jobs").update({status:"queued",error:null,completed_at:null,updated_at:new Date().toISOString()}).eq("id",job.id).in("status",["failed","queued"]);
+ const {error:updateJobError}=await admin.from("video_render_jobs").update({status:"queued",error:null,completed_at:null,updated_at:new Date().toISOString()}).eq("id",job.id).in("status",["failed","queued"]);
  if(updateJobError)return NextResponse.json({error:"Could not requeue render job.",details:updateJobError.message},{status:500});
  const {error:updateIdeaError}=await supabase.from("content_ideas").update({video_production_status:"queued",video_verification:{stage:"retry_queued",jobId:job.id,previousAttempts:job.attempts}}).eq("id",id).eq("owner_id",user.id);
  if(updateIdeaError)return NextResponse.json({error:"Job was requeued but idea status could not be updated.",details:updateIdeaError.message},{status:500});
