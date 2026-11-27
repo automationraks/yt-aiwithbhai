@@ -49,11 +49,12 @@ export async function POST(req: Request) {
   if (itemError || !item) return NextResponse.json({ error: "Calendar item not found." }, { status: 404 });
   const { data: script, error: scriptError } = await supabase.from("content_scripts").select("*").eq("calendar_id", calendarId).eq("owner_id", user.id).order("version", { ascending: false }).limit(1).maybeSingle();
   if (scriptError || !script) return NextResponse.json({ error: "Generate a research-backed script in Content Calendar before using Brand Studio." }, { status: 409 });
+  if (script.estimated_duration_seconds < 30 || script.estimated_duration_seconds > 60) return NextResponse.json({ error: "Brand Studio only accepts scripts between 30 and 60 seconds. Regenerate the script in Content Calendar." }, { status: 409 });
   const { data: brief, error: briefError } = await supabase.from("content_research_briefs").select("*").eq("calendar_id", calendarId).eq("owner_id", user.id).order("created_at", { ascending: false }).limit(1).maybeSingle();
   if (briefError) return NextResponse.json({ error: "Could not load the saved research snapshot.", details: briefError.message }, { status: 500 });
 
   const { data: brandIdentity } = await supabase.from("brand_identity").select("brand_name,display_name,bio,category,brand_pillars,voice_guidelines,color_palette").eq("owner_id", user.id).maybeSingle();
-  const system = `You are the channel brand and packaging editor for AIWithBh@i, an educational YouTube channel for software engineers and IT professionals. Create a coherent, accurate publishing package for one 50-60 second YouTube Short. The channel teaches production AI systems, LLM engineering, RAG, agents, vector databases, inference, evaluation, observability, security, cost, latency and reliability. Return JSON only with this shape: {titleOptions:[3 concise accurate titles],selectedTitle:"",description:"2-4 useful sentences, no unsupported claims",tags:[8-15 relevant search phrases],hashtags:[3-5],pinnedComment:"one useful discussion prompt",thumbnailConcepts:[{concept,visual,textOverlay,composition}],visualIdentity:{palette:[3-5 color names or hex values],typography,editingStyle,bRollStyle},openingFrame:"specific first-frame visual",chapters:[{timestamp,label}],productionChecklist:[...]}. Titles must create curiosity without misleading clickbait. Thumbnail text should be 2-4 words maximum and legible on mobile. Avoid generic AI imagery, fake metrics, keyword stuffing and claims not supported by the supplied research or script. Keep the brand technical, clear, modern and consistent. Chapters must fit the supplied Short duration. Use only facts in the supplied script and research snapshot; do not invent sources or product capabilities. Follow this saved brand identity when present: ${JSON.stringify(brandIdentity ?? { brand_name: "AIWithBh@i", display_name: "AIWithBh@i | AI Automation", brand_pillars: ["AI Tools", "AI Agents", "Automation", "Tutorials", "Projects"], voice_guidelines: "Practical, clear, technically accurate and beginner-friendly.", color_palette: ["#090D14", "#22D3EE", "#A78BFA"] })}.`;
+  const system = `You are the channel brand and packaging editor for AIWithBh@i, an educational YouTube channel for software engineers and IT professionals. Create a coherent, accurate publishing package for one 30-60 second vertical Short. The channel teaches production AI systems, LLM engineering, RAG, agents, vector databases, inference, evaluation, observability, security, cost, latency and reliability. Return JSON only with this shape: {titleOptions:[3 concise accurate titles],selectedTitle:"",description:"2-4 useful sentences, no unsupported claims",tags:[8-15 relevant search phrases],hashtags:[3-5],pinnedComment:"one useful discussion prompt",thumbnailConcepts:[{concept,visual,textOverlay,composition}],visualIdentity:{palette:[3-5 color names or hex values],typography,editingStyle,bRollStyle},openingFrame:"specific first-frame visual",chapters:[{timestamp,label}],productionChecklist:[...]}. Titles must create curiosity without misleading clickbait. Thumbnail text should be 2-4 words maximum and legible on mobile. Avoid generic AI imagery, fake metrics, keyword stuffing and claims not supported by the supplied research or script. Keep the brand technical, clear, modern and consistent. Chapters must fit the supplied Short duration. Use only facts in the supplied script and research snapshot; do not invent sources or product capabilities. Follow this saved brand identity when present: ${JSON.stringify(brandIdentity ?? { brand_name: "AIWithBh@i", display_name: "AIWithBh@i | AI Automation", brand_pillars: ["AI Tools", "AI Agents", "Automation", "Tutorials", "Projects"], voice_guidelines: "Practical, clear, technically accurate and beginner-friendly.", color_palette: ["#090D14", "#22D3EE", "#A78BFA"] })}.`;
   try {
     const generated = await generateResearchJson(system, JSON.stringify({
       topic: item.title,
@@ -83,4 +84,40 @@ export async function POST(req: Request) {
   } catch (error) {
     return NextResponse.json({ error: error instanceof Error ? error.message : "Brand package generation failed." }, { status: 502 });
   }
+}
+
+
+export async function PATCH(req: Request) {
+  const supabase = await createSupabaseServerClient();
+  if (!supabase) return NextResponse.json({ error: "Supabase is not configured." }, { status: 503 });
+  const { data: { user }, error: authError } = await supabase.auth.getUser();
+  if (authError || !user) return NextResponse.json({ error: "Unauthorized." }, { status: 401 });
+
+  let body: Record<string, unknown>;
+  try { body = await req.json(); } catch { return NextResponse.json({ error: "Invalid JSON." }, { status: 400 }); }
+  const assetId = typeof body.assetId === "string" ? body.assetId : "";
+  const status = body.status;
+  if (!assetId || (status !== "approved" && status !== "rejected")) {
+    return NextResponse.json({ error: "Provide an assetId and approved or rejected status." }, { status: 400 });
+  }
+
+  const { data: asset, error: assetError } = await supabase
+    .from("brand_studio_assets")
+    .select("id,status,calendar_id,version")
+    .eq("id", assetId)
+    .eq("owner_id", user.id)
+    .maybeSingle();
+  if (assetError || !asset) return NextResponse.json({ error: "Brand package not found.", details: assetError?.message }, { status: 404 });
+  if (asset.status !== "draft") return NextResponse.json({ error: "Only draft brand packages can be reviewed. Generate a new version to make changes." }, { status: 409 });
+
+  const { data: updated, error: updateError } = await supabase
+    .from("brand_studio_assets")
+    .update({ status })
+    .eq("id", assetId)
+    .eq("owner_id", user.id)
+    .eq("status", "draft")
+    .select("*")
+    .single();
+  if (updateError || !updated) return NextResponse.json({ error: "Could not update brand package review status.", details: updateError?.message }, { status: 500 });
+  return NextResponse.json({ asset: updated, message: status === "approved" ? "Brand package approved." : "Brand package rejected." });
 }
