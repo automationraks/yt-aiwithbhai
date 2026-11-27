@@ -102,6 +102,7 @@ export async function PATCH(request:Request){
        durationSeconds:endSeconds-startSeconds,
        narration:words.slice(from,to).join(" "),
        visualPrompt:scene?.visualPrompt??"",
+       cameraMotion:scene?.cameraMotion??"Slow push-in with subtle parallax",
        onScreenText:scene?.onScreenText??"",
        outputStoragePath:user.id+"/"+existing.id+"/segments/segment-"+String(index+1).padStart(2,"0")+".mp4"
      };
