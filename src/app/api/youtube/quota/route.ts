@@ -20,5 +20,7 @@ export async function GET() {
     }, { status: 503 });
   }
 
-  const quota=data as {search?:{used?:number;limit?:number;remaining?:number};general?:{used?:number;limit?:number;remaining?:number}};\n  const warnings=[...([quota.search,quota.general].map((bucket,index)=>({name:index===0?"search":"general",bucket})).filter(x=>x.bucket?.limit&&Number(x.bucket.used??0)/Number(x.bucket.limit)>=0.8).map(x=>({bucket:x.name,level:Number(x.bucket?.used??0)/Number(x.bucket?.limit??1)>=0.95?"critical":"warning",message:x.name+" quota usage is at least "+Math.round(Number(x.bucket?.used??0)/Number(x.bucket?.limit??1)*100)+"%."})))];\n  return NextResponse.json({ quota: data, warnings });
+  const quota=data as {search?:{used?:number;limit?:number;remaining?:number};general?:{used?:number;limit?:number;remaining?:number}};
+  const warnings=[...([quota.search,quota.general].map((bucket,index)=>({name:index===0?"search":"general",bucket})).filter(x=>x.bucket?.limit&&Number(x.bucket.used??0)/Number(x.bucket.limit)>=0.8).map(x=>({bucket:x.name,level:Number(x.bucket?.used??0)/Number(x.bucket?.limit??1)>=0.95?"critical":"warning",message:x.name+" quota usage is at least "+Math.round(Number(x.bucket?.used??0)/Number(x.bucket?.limit??1)*100)+"%."})))];
+  return NextResponse.json({ quota: data, warnings });
 }
