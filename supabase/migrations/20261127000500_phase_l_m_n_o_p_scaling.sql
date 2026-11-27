@@ -2,7 +2,7 @@
 create table if not exists public.content_opportunity_scores (
  id uuid primary key default gen_random_uuid(),
  owner_id uuid not null references public.app_users(id) on delete cascade,
- workspace_id uuid not null references public.channel_workspaces(id) on delete cascade,
+ workspace_id uuid not null,
  report_date date not null default current_date,
  topic text not null,
  title text not null,
@@ -23,7 +23,7 @@ create index if not exists content_opportunity_scores_rank_idx
 create table if not exists public.scene_asset_jobs (
  id uuid primary key default gen_random_uuid(),
  owner_id uuid not null references public.app_users(id) on delete cascade,
- workspace_id uuid not null references public.channel_workspaces(id) on delete cascade,
+ workspace_id uuid not null,
  idea_id uuid not null references public.content_ideas(id) on delete cascade,
  sequence integer not null check(sequence > 0),
  prompt text not null,
@@ -43,7 +43,7 @@ create index if not exists scene_asset_jobs_queue_idx on public.scene_asset_jobs
 create table if not exists public.platform_analytics_imports (
  id uuid primary key default gen_random_uuid(),
  owner_id uuid not null references public.app_users(id) on delete cascade,
- workspace_id uuid not null references public.channel_workspaces(id) on delete cascade,
+ workspace_id uuid not null,
  platform text not null check(platform in ('youtube','instagram')),
  account_id uuid references public.channel_accounts(id) on delete set null,
  report_date date not null,
@@ -60,6 +60,30 @@ create table if not exists public.platform_analytics_imports (
 );
 create index if not exists platform_analytics_imports_date_idx
  on public.platform_analytics_imports(owner_id,workspace_id,report_date desc);
+
+-- Enforce workspace ownership with the composite key. This remains valid even
+-- when an existing channel_workspaces table has only the (id, owner_id) unique key.
+do $
+begin
+ if not exists (select 1 from pg_constraint where conname='content_opportunity_scores_workspace_owner_fkey' and conrelid='public.content_opportunity_scores'::regclass) then
+  alter table public.content_opportunity_scores
+   add constraint content_opportunity_scores_workspace_owner_fkey
+   foreign key (workspace_id,owner_id)
+   references public.channel_workspaces(id,owner_id) on delete cascade;
+ end if;
+ if not exists (select 1 from pg_constraint where conname='scene_asset_jobs_workspace_owner_fkey' and conrelid='public.scene_asset_jobs'::regclass) then
+  alter table public.scene_asset_jobs
+   add constraint scene_asset_jobs_workspace_owner_fkey
+   foreign key (workspace_id,owner_id)
+   references public.channel_workspaces(id,owner_id) on delete cascade;
+ end if;
+ if not exists (select 1 from pg_constraint where conname='platform_analytics_imports_workspace_owner_fkey' and conrelid='public.platform_analytics_imports'::regclass) then
+  alter table public.platform_analytics_imports
+   add constraint platform_analytics_imports_workspace_owner_fkey
+   foreign key (workspace_id,owner_id)
+   references public.channel_workspaces(id,owner_id) on delete cascade;
+ end if;
+end $;
 
 alter table public.content_intelligence_reports add column if not exists workspace_id uuid;
 alter table public.content_intelligence_reports drop constraint if exists content_intelligence_reports_owner_id_report_date_key;
