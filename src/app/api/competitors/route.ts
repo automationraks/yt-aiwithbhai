@@ -47,7 +47,7 @@ export async function PATCH(request: NextRequest) {
     if (currentError || !current) return NextResponse.json({ error: "Competitor not found." }, { status: 404 });
     if (body.ai_production_status === "qualified" && !current.is_active) {
       const { count, error: countError } = await supabase.from("competitors")
-        .select("id", { count: "exact", head: true }).eq("owner_id", user.id).eq("is_active", true);
+        .select("id", { count: "exact", head: true }).eq("owner_id", user.id).eq("workspace_id", ws.id).eq("is_active", true);
       if (countError) return NextResponse.json({ error: "Could not verify active competitor limit." }, { status: 500 });
       if ((count ?? 0) >= 100) return NextResponse.json({ error: "100 active competitor slots are already in use. Pause one before qualifying another channel." }, { status: 409 });
     }
@@ -76,10 +76,10 @@ export async function PATCH(request: NextRequest) {
   }
 
   if (body.is_active) {
-    const { data: current, error: currentError } = await supabase.from("competitors").select("is_active,ai_production_status,is_manual_priority").eq("id", body.id).eq("owner_id", user.id).maybeSingle();
+    const { data: current, error: currentError } = await supabase.from("competitors").select("is_active,ai_production_status,is_manual_priority").eq("id", body.id).eq("owner_id", user.id).eq("workspace_id", ws.id).maybeSingle();
     if (currentError || !current) return NextResponse.json({ error: "Competitor not found." }, { status: 404 });
     if (current.ai_production_status !== "qualified") return NextResponse.json({ error: "Approve this channel first. Only approved channels can be activated." }, { status: 409 });
-    const { count, error: countError } = await supabase.from("competitors").select("id", { count: "exact", head: true }).eq("owner_id", user.id).eq("is_active", true).eq("ai_production_status", "qualified");
+    const { count, error: countError } = await supabase.from("competitors").select("id", { count: "exact", head: true }).eq("owner_id", user.id).eq("workspace_id", ws.id).eq("is_active", true).eq("ai_production_status", "qualified");
     if (countError) return NextResponse.json({ error: "Could not verify active competitor limit." }, { status: 500 });
     if (!current.is_active && (count ?? 0) >= 100) return NextResponse.json({ error: "You have reached the 100 active competitor limit." }, { status: 409 });
   }
@@ -89,7 +89,7 @@ export async function PATCH(request: NextRequest) {
   const { data, error } = await supabase.from("competitors").update({
     is_active: body.is_active, user_tracking_preference: body.is_active,
     last_user_action: action, last_user_action_at: actionAt,
-  }).eq("id", body.id).eq("owner_id", user.id).select("id,is_active,user_tracking_preference,last_user_action,last_user_action_at").maybeSingle();
+  }).eq("id", body.id).eq("owner_id", user.id).eq("workspace_id", ws.id).select("id,is_active,user_tracking_preference,last_user_action,last_user_action_at").maybeSingle();
   if (error) return NextResponse.json({ error: "Could not update competitor.", details: error.message }, { status: 500 });
   if (!data) return NextResponse.json({ error: "Competitor not found." }, { status: 404 });
   const { data: priorityLink } = await supabase.from("manual_tracked_channels").select("id").eq("owner_id", user.id).eq("competitor_id", data.id).eq("platform", "youtube").maybeSingle();
