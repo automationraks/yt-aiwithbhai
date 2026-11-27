@@ -359,7 +359,7 @@ export async function POST(request: NextRequest) {
       for (let index = 0; index < staleIds.length; index += 100) {
         const batch = staleIds.slice(index, index + 100);
         const { data: removed, error: clearError } = await supabase.from("competitors")
-          .delete().eq("owner_id", user.id).eq("is_manual_priority", false).in("id", batch).select("id");
+          .delete().eq("owner_id", user.id).eq("workspace_id", workspace.id).eq("is_manual_priority", false).in("id", batch).select("id");
         if (clearError) return NextResponse.json({ error: "New matching channels were saved, but old automatically discovered channels could not be fully cleared.", details: clearError.message, saved, removedAutomaticChannels }, { status: 500 });
         removedAutomaticChannels += removed?.length ?? 0;
       }
