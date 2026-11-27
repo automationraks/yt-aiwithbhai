@@ -14,7 +14,7 @@ export async function GET() {
   .eq("owner_id", user.id).eq("workspace_id", ws.id).order("platform");
  if (error) return NextResponse.json({ error: "Could not load registered accounts.", details: error.message }, { status: 500 });
  const webhookConfigured = Boolean(process.env.N8N_PUBLISHING_WEBHOOK_URL);
- const callbackConfigured = Boolean(process.env.N8N_WEBHOOK_SECRET);
+ const callbackConfigured = Boolean(process.env.N8N_PUBLISHING_CALLBACK_SECRET);
  return NextResponse.json({
   activeWorkspace: ws, connections: accounts ?? [],
   readiness: {
