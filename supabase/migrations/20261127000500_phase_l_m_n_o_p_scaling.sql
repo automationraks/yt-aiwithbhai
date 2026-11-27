@@ -82,7 +82,7 @@ update public.content_roi_snapshots r set workspace_id=w.id
 update public.affiliate_performance_daily r set workspace_id=w.id
  from public.channel_workspaces w where r.owner_id=w.owner_id and w.is_default and r.workspace_id is null;
 
-create unique index if not exists content_intelligence_reports_owner_workspace_date_uidx on public.content_intelligence_reports(owner_id,workspace_id,report_date) where workspace_id is not null;
+create unique index if not exists content_intelligence_reports_owner_workspace_date_uidx on public.content_intelligence_reports(owner_id,workspace_id,report_date);
 create index if not exists content_intelligence_workspace_date_idx on public.content_intelligence_reports(owner_id,workspace_id,report_date desc);
 create index if not exists monetization_workspace_date_idx on public.monetization_entries(owner_id,workspace_id,entry_date desc);
 create index if not exists content_roi_workspace_date_idx on public.content_roi_snapshots(owner_id,workspace_id,snapshot_date desc);
