@@ -1,15 +1,6 @@
 -- Phase H: operational controls, unified workflow history and monitoring support.
-alter table public.workflow_event_logs
-  drop constraint if exists workflow_event_logs_workflow_check;
-alter table public.workflow_event_logs
-  add constraint workflow_event_logs_workflow_check
-  check (workflow in ('idea_generation','video_production','publishing'));
-
-alter table public.workflow_event_logs
-  drop constraint if exists workflow_event_logs_status_check;
-alter table public.workflow_event_logs
-  add constraint workflow_event_logs_status_check
-  check (status in ('started','completed','failed','skipped','review_required','queued','processing','scheduled'));
+-- Workflow names and statuses evolve as new automation modules are added.
+-- Keep the event log extensible; validate event payloads in application code.
 
 create table if not exists public.operations_controls (
   id uuid primary key default gen_random_uuid(),
