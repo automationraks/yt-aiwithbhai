@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
+import { getActiveWorkspace } from "@/lib/workspaces/context";
 
 export const dynamic = "force-dynamic";
 
@@ -20,9 +21,11 @@ export async function GET() {
   const { data: { user }, error: authError } = await db.auth.getUser();
   if (authError || !user) return NextResponse.json({ error: "Unauthorized." }, { status: 401 });
 
+  const ws = await getActiveWorkspace(db, user.id);
+  if (!ws) return NextResponse.json({ alerts: [], generatedAt: new Date().toISOString() });
   const { data: channels, error } = await db.from("competitors")
     .select("id,channel_title,subscriber_count,view_count,last_checked_at")
-    .eq("owner_id", user.id).eq("is_active", true).eq("ai_production_status", "qualified");
+    .eq("owner_id", user.id).eq("workspace_id", ws.id).eq("is_active", true).eq("ai_production_status", "qualified");
   if (error) return NextResponse.json({ error: "Could not load tracked channels.", details: error.message }, { status: 500 });
   const ids = (channels ?? []).map((channel) => channel.id);
   if (!ids.length) return NextResponse.json({ alerts: [], generatedAt: new Date().toISOString() });
