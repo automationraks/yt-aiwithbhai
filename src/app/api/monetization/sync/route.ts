@@ -31,11 +31,16 @@ export async function POST(request: Request) {
   .upsert(metrics, { onConflict: "owner_id,workspace_id,platform,report_date,source" }).select("*").single();
  if (error) return NextResponse.json({ error: "Could not import analytics. Apply Phase L-P migration first.", details: error.message }, { status: 500 });
  if (metrics.revenue > 0) {
-  await db.from("monetization_entries").upsert({
+  const { data: existingRevenue } = await db.from("monetization_entries").select("id")
+   .eq("owner_id", user.id).eq("workspace_id", ws.id).eq("platform", platform)
+   .eq("entry_date", reportDate).eq("source_name", source).maybeSingle();
+  const revenueRow = {
    owner_id: user.id, workspace_id: ws.id, platform, revenue_type: "ad_revenue",
    amount: metrics.revenue, currency, entry_date: reportDate, source_name: source,
    notes: "Imported platform analytics; verify against the platform's finalized revenue report."
-  }, { onConflict: "owner_id,entry_date,source_name" });
+  };
+  if (existingRevenue?.id) await db.from("monetization_entries").update(revenueRow).eq("id", existingRevenue.id).eq("owner_id", user.id);
+  else await db.from("monetization_entries").insert(revenueRow);
  }
  return NextResponse.json({ ok: true, import: data, source, mode: "user_supplied_analytics_import" });
 }
