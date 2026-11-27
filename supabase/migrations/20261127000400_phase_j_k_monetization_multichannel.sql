@@ -166,6 +166,23 @@ alter table public.publishing_targets add constraint publishing_targets_channel_
  foreign key(channel_workspace_id,owner_id) references public.channel_workspaces(id,owner_id) on delete set null;
 create index if not exists publishing_targets_workspace_schedule_idx on public.publishing_targets(owner_id,channel_workspace_id,scheduled_at);
 
+-- Preserve the existing single-channel setup as each owner's initial workspace.
+insert into public.channel_workspaces(owner_id,name,slug,description,timezone,is_default)
+select u.id,'AIWithBh@i','aiwithbhai','Migrated default workspace','Asia/Kolkata',true
+from public.app_users u
+where not exists (select 1 from public.channel_workspaces w where w.owner_id=u.id)
+on conflict(owner_id,slug) do nothing;
+
+update public.content_ideas i
+set channel_workspace_id=w.id
+from public.channel_workspaces w
+where i.owner_id=w.owner_id and w.is_default and i.channel_workspace_id is null;
+
+update public.publishing_targets p
+set channel_workspace_id=w.id
+from public.channel_workspaces w
+where p.owner_id=w.owner_id and w.is_default and p.channel_workspace_id is null;
+
 -- All writes are performed through the authenticated application session and server-side DB client.
 -- RLS remains enabled as defence in depth for direct database access.
 do $$
