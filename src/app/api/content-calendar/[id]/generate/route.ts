@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { generateResearchJson } from "@/lib/ai/research";
+import { getActiveWorkspace } from "@/lib/workspaces/context";
 export const runtime="nodejs";export const dynamic="force-dynamic";
 type GeneratedContent={
  researchConfidence?:number;scriptConfidence?:number;sourceReferences?:Array<Record<string,unknown>>;
@@ -10,13 +11,14 @@ type GeneratedContent={
 export async function POST(_req:Request,{params}:{params:Promise<{id:string}>}){
  const {id}=await params;const s=await createSupabaseServerClient();if(!s)return NextResponse.json({error:"Supabase is not configured."},{status:503});
  const {data:{user},error:a}=await s.auth.getUser();if(a||!user)return NextResponse.json({error:"Unauthorized."},{status:401});
- const {data:item,error:ie}=await s.from("content_calendar").select("*").eq("id",id).eq("owner_id",user.id).single();if(ie||!item)return NextResponse.json({error:"Calendar item not found."},{status:404});
- const {data:channels,error:ce}=await s.from("competitors").select("id,channel_title,channel_url").eq("owner_id",user.id).eq("is_active",true).eq("ai_production_status","qualified").limit(100);if(ce)return NextResponse.json({error:"Could not load approved research channels.",details:ce.message},{status:500});
+ const ws=await getActiveWorkspace(s,user.id);if(!ws)return NextResponse.json({error:"Create a workspace first."},{status:409});
+ const {data:item,error:ie}=await s.from("content_calendar").select("*").eq("id",id).eq("owner_id",user.id).eq("workspace_id",ws.id).single();if(ie||!item)return NextResponse.json({error:"Calendar item not found."},{status:404});
+ const {data:channels,error:ce}=await s.from("competitors").select("id,channel_title,channel_url").eq("owner_id",user.id).eq("workspace_id",ws.id).eq("is_active",true).eq("ai_production_status","qualified").limit(100);if(ce)return NextResponse.json({error:"Could not load approved research channels.",details:ce.message},{status:500});
  const channelIds=(channels??[]).map(x=>x.id);
  const {data:videos,error:ve}=channelIds.length?await s.from("videos").select("youtube_video_id,title,description,published_at,view_count,video_url,competitor_id").eq("owner_id",user.id).eq("is_niche_relevant",true).in("competitor_id",channelIds).order("published_at",{ascending:false}).limit(60):{data:[],error:null};
  if(ve)return NextResponse.json({error:"Could not load research videos.",details:ve.message},{status:500});
  const {data:trends,error:te}=await s.from("architecture_trends").select("title,industry,pattern,business_problem,architecture_flow,design_considerations,tradeoffs,source_links,confidence_score,evidence_note").eq("owner_id",user.id).order("updated_at",{ascending:false}).limit(25);if(te)return NextResponse.json({error:"Could not load architecture trends.",details:te.message},{status:500});
- const {data:ideas}=await s.from("content_ideas").select("title,hook,outline,opportunity_score,source_references").eq("owner_id",user.id).order("created_at",{ascending:false}).limit(40);
+ const {data:ideas}=await s.from("content_ideas").select("title,hook,outline,opportunity_score,source_references").eq("owner_id",user.id).eq("channel_workspace_id",ws.id).order("created_at",{ascending:false}).limit(40);
  const refs=(videos??[]).map(v=>({videoId:v.youtube_video_id,title:v.title,description:(v.description??"").slice(0,500),url:v.video_url??("https://youtube.com/watch?v="+v.youtube_video_id),publishedAt:v.published_at,views:v.view_count,channel:(channels??[]).find(c=>c.id===v.competitor_id)?.channel_title??"Approved channel"}));
  const system=`You are the research editor and high-retention YouTube Shorts writer for AIWithBh@i. Audience: software engineers and IT professionals. Create ONLY a 50-60 second short, target 55 seconds, approximately 115-145 spoken words. Research must be evidence-grounded. Return JSON: {researchConfidence:0-100,scriptConfidence:0-100,researchSummary:"",keyFacts:[...],sourceReferences:[{title,url,sourceType}],contentGap:"",differentiation:"",outline:[{time:"0-3s",purpose:"",visual:"",narration:""}],hook:"",script:"",curiosityLoops:[...],endingPayoff:"",estimatedDurationSeconds:55}. Confidence means evidence quality and script-to-brief alignment, not a guarantee of performance. Only assign scores above 80 when sources directly support the key claims and the story is coherent; otherwise return lower scores and explain missing evidence. Script structure: 0-3s pattern-breaking hook with a concrete tension; 3-10s establish stakes and open a question; 10-40s deliver escalating useful steps while opening and closing curiosity loops; 40-52s reveal payoff/trade-off; 52-60s concise takeaway/CTA. No slow intro, generic greetings, filler, fake statistics, unsupported claims or copied competitor wording. Use a single clear narrative, spoken natural language, visual changes every 2-4 seconds, and make the ending resolve the opening question. If evidence is insufficient, do not fabricate: score below 81.`;
  try{
