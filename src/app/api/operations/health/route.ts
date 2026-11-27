@@ -9,7 +9,7 @@ export async function GET(){
  const {data:{user},error:authError}=await db.auth.getUser();
  if(authError||!user)return NextResponse.json({error:"Unauthorized."},{status:401});
  const checks:Array<{key:string;status:"ok"|"warning"|"error";detail:string}>=[];
- const tables=["workflow_event_logs","ai_usage_logs","publishing_targets","operations_controls"];
+ const tables=["workflow_event_logs","ai_usage_logs","publishing_targets","operations_controls","app_notifications","content_intelligence_reports"];
  const results=await Promise.all(tables.map(async table=>{
   const {error}=await db.from(table).select("id",{head:true,count:"exact"}).limit(1);
   return {table,error};
