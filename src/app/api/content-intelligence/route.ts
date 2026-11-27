@@ -1,6 +1,7 @@
 import {NextResponse} from "next/server";
 import {createSupabaseServerClient} from "@/lib/supabase/server";
 import {logWorkflowEvent} from "@/lib/workflow-events";
+import {getActiveWorkspace} from "@/lib/workspaces/context";
 export const runtime="nodejs";export const dynamic="force-dynamic";
 type Video={title:string|null;description?:string|null;view_count?:number|null;published_at?:string|null;platform?:string|null;source_channel_name?:string|null};
 const TAXONOMY:Array<[string,RegExp]>=[["AI agents & orchestration",/\b(agent|agentic|multi-agent|orchestration|tool calling)\b/i],["RAG & retrieval",/\b(rag|retrieval|embedding|vector database|semantic search)\b/i],["AI architecture & system design",/\b(architecture|system design|reference architecture|enterprise ai)\b/i],["LLMOps & evaluation",/\b(llmops|evaluation|observability|tracing|benchmark|monitoring)\b/i],["Inference & model serving",/\b(inference|serving|gpu|quantization|vllm|latency)\b/i],["AI security & governance",/\b(security|guardrail|safety|governance|prompt injection)\b/i],["AI automation",/\b(automation|workflow|n8n|zapier|make.com)\b/i]];
@@ -8,13 +9,15 @@ function rankTopics(videos:Video[]){return TAXONOMY.map(([name,pattern])=>{const
 export async function GET(){
  const db=await createSupabaseServerClient();if(!db)return NextResponse.json({error:"Supabase is not configured."},{status:503});
  const {data:{user},error:authError}=await db.auth.getUser();if(authError||!user)return NextResponse.json({error:"Unauthorized."},{status:401});
- const {data,error}=await db.from("content_intelligence_reports").select("*").eq("owner_id",user.id).order("report_date",{ascending:false}).limit(20);
+ const ws=await getActiveWorkspace(db,user.id);if(!ws)return NextResponse.json({reports:[],latest:null});
+ const {data,error}=await db.from("content_intelligence_reports").select("*").eq("owner_id",user.id).eq("workspace_id",ws.id).order("report_date",{ascending:false}).limit(20);
  if(error)return NextResponse.json({error:"Could not load intelligence reports. Apply migration 20261127000300 first.",details:error.message},{status:503});
  return NextResponse.json({reports:data??[],latest:data?.[0]??null});
 }
 export async function POST(){
  const db=await createSupabaseServerClient();if(!db)return NextResponse.json({error:"Supabase is not configured."},{status:503});
  const {data:{user},error:authError}=await db.auth.getUser();if(authError||!user)return NextResponse.json({error:"Unauthorized."},{status:401});
+ const ws=await getActiveWorkspace(db,user.id);if(!ws)return NextResponse.json({error:"Create a workspace first."},{status:409});
  const {data:control}=await db.from("operations_controls").select("enabled").eq("owner_id",user.id).eq("control_key","research_automation").maybeSingle();
  if(control?.enabled===false)return NextResponse.json({error:"Research automation is paused in Automation Control."},{status:423});
  const [yt,ig,competitors]=await Promise.all([
@@ -44,8 +47,8 @@ export async function POST(){
   if(generatedBy==="rules_based"&&process.env.GROQ_API_KEY){const r=await fetch("https://api.groq.com/openai/v1/chat/completions",{method:"POST",headers:{"Authorization":"Bearer "+process.env.GROQ_API_KEY,"Content-Type":"application/json"},body:JSON.stringify({model:process.env.GROQ_MODEL||"llama-3.3-70b-versatile",messages:[{role:"user",content:prompt}],temperature:0.25,response_format:{type:"json_object"}}),signal:AbortSignal.timeout(18000)});const d=await r.json();if(r.ok){const parsed=JSON.parse(d.choices?.[0]?.message?.content??"{}");if(typeof parsed.summary==="string"){summary=parsed.summary;generatedBy="groq";if(Array.isArray(parsed.recommendations)&&parsed.recommendations.length)recommendations.splice(0,recommendations.length,...parsed.recommendations.map(String).slice(0,6));if(Array.isArray(parsed.contentGaps)&&parsed.contentGaps.length)contentGaps.splice(0,contentGaps.length,...parsed.contentGaps.slice(0,7));}}}
  }catch{/* Keep source-grounded deterministic report if AI providers fail. */}
  const today=new Intl.DateTimeFormat("en-CA",{timeZone:"Asia/Kolkata",year:"numeric",month:"2-digit",day:"2-digit"}).format(new Date());
- const report={owner_id:user.id,report_date:today,summary,trending_topics:topics.slice(0,7),content_gaps:contentGaps,recommendations,source_counts:{youtube:youtubeVideos.length,instagram:(ig.data??[]).length,qualifiedChannels:channels.length,recent30Days:recent.length},generated_at:new Date().toISOString()};
- const {data:saved,error:saveError}=await db.from("content_intelligence_reports").upsert(report,{onConflict:"owner_id,report_date"}).select("*").single();
+ const report={owner_id:user.id,workspace_id:ws.id,report_date:today,summary,trending_topics:topics.slice(0,7),content_gaps:contentGaps,recommendations,source_counts:{youtube:youtubeVideos.length,instagram:(ig.data??[]).length,qualifiedChannels:channels.length,recent30Days:recent.length},generated_at:new Date().toISOString()};
+ const {data:saved,error:saveError}=await db.from("content_intelligence_reports").upsert(report,{onConflict:"owner_id,workspace_id,report_date"}).select("*").single();
  if(saveError)return NextResponse.json({error:"Could not save intelligence report.",details:saveError.message},{status:500});
  await logWorkflowEvent({ownerId:user.id,workflow:"idea_generation",eventKey:"content_intelligence_generated",stage:"research_analysis",status:"completed",message:"Content intelligence report generated from saved competitor and Instagram research.",metadata:{generatedBy,sources:report.source_counts,topics:topics.length}});
  return NextResponse.json({report:saved,generatedBy,sourceCounts:report.source_counts});
