@@ -129,6 +129,7 @@ export async function GET(req: NextRequest) {
     destination.searchParams.set("error", message.slice(0, 240));
     const response = NextResponse.redirect(destination);
     response.cookies.delete("ig_oauth_state");
+    response.cookies.delete("ig_oauth_workspace");
     return response;
   };
 
@@ -152,6 +153,10 @@ export async function GET(req: NextRequest) {
   if (!user) return fail("Your session expired. Sign in and connect again.");
 
   try {
+    const workspaceId = req.cookies.get("ig_oauth_workspace")?.value;
+    if (!workspaceId) throw new Error("Instagram workspace context expired. Connect again.");
+    const { data: workspace } = await supabase.from("channel_workspaces").select("id").eq("id", workspaceId).eq("owner_id", user.id).eq("is_active", true).maybeSingle();
+    if (!workspace) throw new Error("Instagram workspace not found.");
     const appId = process.env.META_APP_ID;
     const appSecret = process.env.META_APP_SECRET;
     const redirectUri = process.env.META_REDIRECT_URI;
@@ -214,6 +219,7 @@ export async function GET(req: NextRequest) {
     const { error } = await supabase.from("instagram_connections").upsert(
       {
         owner_id: user.id,
+        workspace_id: workspaceId,
         instagram_user_id: instagramAccount.id,
         instagram_username: instagramAccount.username,
         facebook_page_id: page.id,
@@ -225,7 +231,7 @@ export async function GET(req: NextRequest) {
         scopes: grantedScopes,
         updated_at: new Date().toISOString(),
       },
-      { onConflict: "owner_id" },
+      { onConflict: "workspace_id" },
     );
 
     if (error) {
@@ -242,5 +248,6 @@ export async function GET(req: NextRequest) {
 
   const response = NextResponse.redirect(destination);
   response.cookies.delete("ig_oauth_state");
+  response.cookies.delete("ig_oauth_workspace");
   return response;
 }
