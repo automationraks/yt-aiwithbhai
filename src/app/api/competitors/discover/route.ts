@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { getAIConfiguration } from "@/lib/ai/provider";
+import { getActiveWorkspace } from "@/lib/workspaces/context";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -153,6 +154,8 @@ export async function POST(request: NextRequest) {
   const { data: { user }, error: authError } = await supabase.auth.getUser();
   if (authError || !user) return NextResponse.json({ error: "Unauthorized." }, { status: 401 });
   if (!process.env.YOUTUBE_API_KEY) return NextResponse.json({ error: "YOUTUBE_API_KEY is not configured on the server." }, { status: 503 });
+  const workspace = await getActiveWorkspace(supabase, user.id);
+  if (!workspace) return NextResponse.json({ error: "Create a workspace first." }, { status: 409 });
 
   let body: { keywords?: unknown; language?: unknown; mode?: unknown };
   try { body = await request.json(); } catch { return NextResponse.json({ error: "Request body must be valid JSON." }, { status: 400 }); }
@@ -193,7 +196,7 @@ export async function POST(request: NextRequest) {
     return (group + extra + " " + excludedSearchTerms).slice(0, 450);
   });
 
-  const { count, error: countError } = await supabase.from("competitors").select("id", { count: "exact", head: true }).eq("owner_id", user.id).eq("is_active", true);
+  const { count, error: countError } = await supabase.from("competitors").select("id", { count: "exact", head: true }).eq("owner_id", user.id).eq("workspace_id", workspace.id).eq("is_active", true);
   if (countError) return NextResponse.json({ error: "Could not check your active competitor limit." }, { status: 500 });
 
   try {
@@ -311,7 +314,7 @@ export async function POST(request: NextRequest) {
         requiresHumanVerification: true,
       } : { ...oldEvidence, sampleVideos: samplesByChannel.get(channel.id) ?? oldEvidence.sampleVideos ?? [] };
       return {
-        owner_id: user.id, youtube_channel_id: channel.id,
+        owner_id: user.id, workspace_id: workspace.id, youtube_channel_id: channel.id,
         channel_title: channel.snippet?.title ?? "Untitled channel",
         channel_url: channel.snippet?.customUrl ? `https://www.youtube.com/@${channel.snippet.customUrl.replace(/^@/, "")}` : `https://www.youtube.com/channel/${channel.id}`,
         description: channel.snippet?.description ?? null, published_at: channel.snippet?.publishedAt ?? null,
@@ -333,7 +336,7 @@ export async function POST(request: NextRequest) {
     });
     let saved = 0;
     if (rows.length) {
-      const { data, error } = await supabase.from("competitors").upsert(rows, { onConflict: "owner_id,youtube_channel_id" }).select("id");
+      const { data, error } = await supabase.from("competitors").upsert(rows, { onConflict: "owner_id,workspace_id,youtube_channel_id" }).select("id");
       if (error) return NextResponse.json({ error: "YouTube search succeeded, but saving discovered channels failed.", details: error.message }, { status: 500 });
       saved = data?.length ?? 0;
     }
