@@ -26,10 +26,10 @@ export async function renderSegments({job,workDir,stockDir,ffmpeg,ffprobe}){
   if(asset)args.push("-filter_complex","[0:v]scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920,setsar=1[bg];[bg][1:v]overlay=0:0,format=yuv420p[v]","-map","[v]");else args.push("-vf","scale=1080:1920,format=yuv420p");
   args.push("-t",String(duration),"-an","-r","30","-c:v","libx264","-preset","veryfast","-crf","21","-pix_fmt","yuv420p","-movflags","+faststart","-y",clip);await run(ffmpeg,args);clips.push(clip);
  }
- const list=path.join(workDir,"concat.txt");await fs.writeFile(list,clips.map(x=>"file '"+x.replaceAll("\\\\","/").replaceAll("'","'\\''")+"'").join("\\n"),"utf8");
+ const list=path.join(workDir,"concat.txt");await fs.writeFile(list,clips.map(x=>"file '"+x.replaceAll("\\","/").replaceAll("'","'\\''")+"'").join("\\n"),"utf8");
  const silent=path.join(workDir,"silent.mp4");await run(ffmpeg,["-f","concat","-safe","0","-i",list,"-c","copy","-y",silent]);return {clips,silent,duration:await probe(ffprobe,silent)};
 }
 export async function muxFinal({silent,audio,subtitles,final,ffmpeg,ffprobe}){
- await run(ffmpeg,["-i",silent,"-i",audio,"-vf",`subtitles='${subtitles.replaceAll("\\\\","/").replaceAll(":","\\\\:")}'`,"-map","0:v:0","-map","1:a:0","-c:v","libx264","-preset","veryfast","-crf","21","-c:a","aac","-b:a","192k","-shortest","-movflags","+faststart","-y",final]);
+ await run(ffmpeg,["-i",silent,"-i",audio,"-vf",`subtitles='${subtitles.replaceAll("\\","/").replaceAll(":","\\:")}'`,"-map","0:v:0","-map","1:a:0","-c:v","libx264","-preset","veryfast","-crf","21","-c:a","aac","-b:a","192k","-shortest","-movflags","+faststart","-y",final]);
  const duration=await probe(ffprobe,final);if(!Number.isFinite(duration)||duration<30||duration>60)throw new Error(`Final duration ${duration.toFixed(1)}s outside allowed 30-60s.`);return duration;
 }
