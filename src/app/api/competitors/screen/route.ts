@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { getAIConfiguration } from "@/lib/ai/provider";
+import { getActiveWorkspace } from "@/lib/workspaces/context";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -176,13 +177,16 @@ export async function POST(request: NextRequest) {
   const { data: { user }, error: authError } = await supabase.auth.getUser();
   if (authError || !user) return NextResponse.json({ error: "Unauthorized." }, { status: 401 });
 
+  const ws = await getActiveWorkspace(supabase, user.id);
+  if (!ws) return NextResponse.json({ error: "Create a workspace first." }, { status: 409 });
+
   let body: { id?: unknown };
   try { body = await request.json(); } catch { return NextResponse.json({ error: "Request body must be valid JSON." }, { status: 400 }); }
   if (typeof body.id !== "string" || body.id.length > 80) return NextResponse.json({ error: "A valid competitor id is required." }, { status: 400 });
 
   const { data: competitor, error } = await supabase.from("competitors")
     .select("id,youtube_channel_id,channel_title,channel_url,description,ai_production_evidence")
-    .eq("id", body.id).eq("owner_id", user.id).maybeSingle();
+    .eq("id", body.id).eq("owner_id", user.id).eq("workspace_id", ws.id).maybeSingle();
   if (error || !competitor) return NextResponse.json({ error: "Competitor not found." }, { status: 404 });
 
   const evidence = (competitor.ai_production_evidence && typeof competitor.ai_production_evidence === "object")
@@ -194,7 +198,7 @@ export async function POST(request: NextRequest) {
       if (!samples.length) return NextResponse.json({ error: "YouTube did not return any recent public videos for this channel. Check whether the channel has public uploads." }, { status: 422 });
       const { error: evidenceSaveError } = await supabase.from("competitors").update({
         ai_production_evidence: { ...evidence, sampleVideos: samples, sampleVideosRefreshedAt: new Date().toISOString(), requiresHumanVerification: true },
-      }).eq("id", competitor.id).eq("owner_id", user.id);
+      }).eq("id", competitor.id).eq("owner_id", user.id).eq("workspace_id", ws.id);
       if (evidenceSaveError) return NextResponse.json({ error: "Sample videos were retrieved but could not be saved.", details: evidenceSaveError.message }, { status: 500 });
     } catch (sampleError) {
       const message = sampleError instanceof Error ? sampleError.message : "Could not retrieve sample videos.";
@@ -264,7 +268,7 @@ export async function POST(request: NextRequest) {
   };
   const { data: updated, error: saveError } = await supabase.from("competitors").update({
     ai_production_evidence: latestEvidence,
-  }).eq("id", competitor.id).eq("owner_id", user.id)
+  }).eq("id", competitor.id).eq("owner_id", user.id).eq("workspace_id", ws.id)
     .select("id,ai_production_evidence,ai_production_status").maybeSingle();
   if (saveError || !updated) return NextResponse.json({ error: "AI screening ran, but its result could not be saved.", details: saveError?.message }, { status: 500 });
 
