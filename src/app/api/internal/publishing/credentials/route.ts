@@ -2,6 +2,7 @@ import {NextResponse} from "next/server";
 import {timingSafeEqual} from "node:crypto";
 import {createSupabaseAdminClient} from "@/lib/auth/session";
 import {decryptPlatformToken,encryptPlatformToken} from "@/lib/platform-token-crypto";
+import {decryptToken} from "@/lib/instagram/crypto";
 export const runtime="nodejs";export const dynamic="force-dynamic";
 function safeEqual(a:string,b:string){const x=Buffer.from(a),y=Buffer.from(b);return x.length===y.length&&timingSafeEqual(x,y);}
 async function refreshYouTube(db:ReturnType<typeof createSupabaseAdminClient>,row:Record<string,unknown>){
@@ -27,6 +28,6 @@ export async function POST(req:Request){
   }
   const {data:row,error}=await db.from("instagram_connections").select("*").eq("owner_id",body.ownerId).eq("workspace_id",body.workspaceId).maybeSingle();if(error||!row)return NextResponse.json({error:"Instagram account is not connected for this workspace."},{status:404});
   if(row.token_expires_at&&Date.parse(row.token_expires_at)<Date.now()+86400000)return NextResponse.json({error:"Instagram Page token is expiring; reconnect the Instagram account."},{status:409});
-  return NextResponse.json({platform:"instagram",accessToken:decryptPlatformToken(row.encrypted_page_access_token),instagramUserId:row.instagram_user_id,pageId:row.facebook_page_id});
+  return NextResponse.json({platform:"instagram",accessToken:decryptToken(row.encrypted_page_access_token),instagramUserId:row.instagram_user_id,pageId:row.facebook_page_id});
  }catch(e){return NextResponse.json({error:e instanceof Error?e.message:"Credential lookup failed."},{status:502});}
 }
