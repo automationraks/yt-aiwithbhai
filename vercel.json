@@ -11,6 +11,10 @@
     {
       "path": "/api/cron/weekly-channel-reports",
       "schedule": "0 19 * * 6"
+    },
+    {
+      "path": "/api/cron/content-intelligence",
+      "schedule": "30 0 * * *"
     }
   ]
 }
