@@ -1,5 +1,5 @@
 "use client";
-import {useCallback,useEffect,useState} from "react";import Link from "next/link";import {ArrowLeft,RefreshCw,Target} from "lucide-react";
+import {useCallback,useEffect,useState} from "react";import Link from "next/link";import {ArrowLeft,RefreshCw} from "lucide-react";
 type Opportunity={id:string;topic:string;title:string;rationale:string;overall_score:number;demand_score:number;competition_score:number;fit_score:number;novelty_score:number;evidence:Record<string,unknown>;status:string};
 export default function OpportunityScoringPage(){const[rows,setRows]=useState<Opportunity[]>([]),[loading,setLoading]=useState(true),[running,setRunning]=useState(false),[error,setError]=useState(""),[meta,setMeta]=useState("");
 const load=useCallback(async()=>{setLoading(true);try{const r=await fetch("/api/content-intelligence/opportunities",{cache:"no-store"}),d=await r.json();if(!r.ok)throw new Error(d.error||"Could not load opportunities");setRows(d.opportunities??[])}catch(e){setError(e instanceof Error?e.message:"Request failed")}finally{setLoading(false)}},[]);
