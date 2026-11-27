@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { decryptToken } from "@/lib/instagram/crypto";
+import { getActiveWorkspace } from "@/lib/workspaces/context";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -89,9 +90,9 @@ async function getYouTube() {
   return { connected: true, channel: { id: channel.id, title: channel.snippet?.title ?? "YouTube channel", url: "https://www.youtube.com/channel/" + channel.id, subscribers: Number(s.subscriberCount ?? 0), totalViews: Number(s.viewCount ?? 0), videos: Number(s.videoCount ?? 0), hiddenSubscribers: s.hiddenSubscriberCount === true }, recentVideos };
 }
 
-async function getInstagram(db: Awaited<ReturnType<typeof createSupabaseServerClient>>, ownerId: string) {
+async function getInstagram(db: Awaited<ReturnType<typeof createSupabaseServerClient>>, ownerId: string, workspaceId: string) {
   if (!db) return { connected: false, error: "Supabase is not configured." };
-  const { data, error } = await db.from("instagram_connections").select("instagram_username,instagram_user_id,encrypted_page_access_token,token_expires_at").eq("owner_id", ownerId).maybeSingle();
+  const { data, error } = await db.from("instagram_connections").select("instagram_username,instagram_user_id,encrypted_page_access_token,token_expires_at").eq("owner_id", ownerId).eq("workspace_id", workspaceId).maybeSingle();
   if (error) throw new Error("Could not read Instagram connection: " + error.message);
   if (!data?.instagram_user_id || !data.encrypted_page_access_token) return { connected: false, error: "Connect Instagram in Instagram Discovery to load account analytics." };
   if (data.token_expires_at && new Date(data.token_expires_at).getTime() < Date.now()) return { connected: false, error: "Instagram access token has expired. Reconnect the account." };
@@ -112,7 +113,8 @@ export async function GET() {
   if (!db) return NextResponse.json({ error: "Supabase is not configured." }, { status: 503 });
   const { data: { user }, error } = await db.auth.getUser();
   if (error || !user) return NextResponse.json({ error: "Unauthorized." }, { status: 401 });
-  const results = await Promise.allSettled([getYouTube(), getInstagram(db, user.id)]);
+  const workspace = await getActiveWorkspace(db, user.id);
+  const results = await Promise.allSettled([getYouTube(), workspace ? getInstagram(db, user.id, workspace.id) : Promise.resolve({ connected: false, error: "Select an active workspace to load Instagram analytics." })]);
   const youtube = results[0].status === "fulfilled" ? results[0].value : { connected: false, error: results[0].reason instanceof Error ? results[0].reason.message : "YouTube analytics unavailable." };
   const instagram = results[1].status === "fulfilled" ? results[1].value : { connected: false, error: results[1].reason instanceof Error ? results[1].reason.message : "Instagram analytics unavailable." };
   const localDate = new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Kolkata", year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date());
