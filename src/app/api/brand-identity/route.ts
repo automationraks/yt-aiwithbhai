@@ -60,6 +60,9 @@ export async function PUT(request: Request) {
     const youtubeChannelUrl = text("youtube_channel_url", DEFAULTS.youtube_channel_url, 500);
     if (!displayName || !bio) throw new Error("Display name and bio are required.");
     if (website && !/^https?:\/\//i.test(website)) throw new Error("Website URL must start with http:// or https://.");
+    if (instagramProfileUrl && !/^https?:\/\//i.test(instagramProfileUrl)) throw new Error("Instagram profile URL must start with http:// or https://.");
+    if (youtubeChannelUrl && !/^https?:\/\//i.test(youtubeChannelUrl)) throw new Error("YouTube channel URL must start with http:// or https://.");
+    if (!instagramUsername || !youtubeChannelName || !youtubeHandle) throw new Error("Instagram username and YouTube channel name and handle are required.");
     const pillars = Array.isArray(body.brand_pillars) ? body.brand_pillars.map(String).map(x => x.trim()).filter(Boolean).slice(0, 12) : DEFAULTS.brand_pillars;
     const palette = Array.isArray(body.color_palette) ? body.color_palette.map(String).map(x => x.trim()).filter(Boolean).slice(0, 8) : DEFAULTS.color_palette;
     payload = {
