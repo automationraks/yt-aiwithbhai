@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
+import { getActiveWorkspace } from "@/lib/workspaces/context";
 
 export const dynamic = "force-dynamic";
 
@@ -9,9 +10,11 @@ export async function GET() {
   const { data: { user }, error: authError } = await supabase.auth.getUser();
   if (authError || !user) return NextResponse.json({ error: "Unauthorized." }, { status: 401 });
 
+  const ws = await getActiveWorkspace(supabase, user.id);
+  if (!ws) return NextResponse.json({ analytics: [], summary: { tracked: 0, growing: 0, declining: 0, totalSubscribers: 0, videosSampled: 0 } });
   const { data: competitors, error } = await supabase.from("competitors")
     .select("id,channel_title,channel_url,subscriber_count,video_count,view_count,last_checked_at,ai_production_status,ai_production_evidence")
-    .eq("owner_id", user.id).eq("is_active", true).eq("ai_production_status", "qualified")
+    .eq("owner_id", user.id).eq("workspace_id", ws.id).eq("is_active", true).eq("ai_production_status", "qualified")
     .order("subscriber_count", { ascending: false }).limit(100);
   if (error) return NextResponse.json({ error: "Could not load competitor metrics.", details: error.message }, { status: 500 });
   if (!competitors?.length) return NextResponse.json({ analytics: [], summary: { tracked: 0, growing: 0, declining: 0, totalSubscribers: 0, videosSampled: 0 } });
