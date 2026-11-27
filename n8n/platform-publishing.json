@@ -28,7 +28,7 @@
         300
       ],
       "parameters": {
-        "jsCode": "const e=$json.body??$json;\nif(e.event!=='video_scheduled'||!e.ownerId||!e.idea?.id||!e.idea?.videoStoragePath||!e.callback?.url) throw new Error('Invalid video_scheduled payload.');\nif(!Array.isArray(e.targets)||e.targets.length<1||e.targets.length>2) throw new Error('One or two platform targets are required.');\nconst seen=new Set();\nreturn e.targets.map(t=>{\n  if(!t.id||!['youtube','instagram'].includes(t.platform)||!t.scheduledAt||!Number.isFinite(Date.parse(t.scheduledAt))) throw new Error('Invalid target.');\n  if(seen.has(t.platform)) throw new Error('Duplicate platform target.');\n  seen.add(t.platform);\n  return {json:{ownerId:e.ownerId,ideaId:e.idea.id,title:e.idea.title??'AIWithBh@i video',caption:e.idea.caption??e.idea.title??'',videoStoragePath:e.idea.videoStoragePath,scheduledAt:t.scheduledAt,targetId:t.id,platform:t.platform,callback:e.callback}};\n});"
+        "jsCode": "const e=$json.body??$json;\nif(e.event!=='video_scheduled'||!e.ownerId||!e.idea?.id||!e.idea?.videoStoragePath||!e.callback?.url) throw new Error('Invalid video_scheduled payload.');\nif(!Array.isArray(e.targets)||e.targets.length<1||e.targets.length>2) throw new Error('One or two platform targets are required.');\nconst seen=new Set();\nreturn e.targets.map(t=>{\n  if(!t.id||!['youtube','instagram'].includes(t.platform)||!t.scheduledAt||!Number.isFinite(Date.parse(t.scheduledAt))) throw new Error('Invalid target.');\n  if(seen.has(t.platform)) throw new Error('Duplicate platform target.');\n  seen.add(t.platform);\n  return {json:{ownerId:e.ownerId,workspaceId:e.workspaceId,ideaId:e.idea.id,title:e.idea.title??'AIWithBh@i video',caption:e.idea.caption??e.idea.title??'',videoStoragePath:e.idea.videoStoragePath,scheduledAt:t.scheduledAt,targetId:t.id,platform:t.platform,callback:e.callback}};\n});"
       }
     },
     {
@@ -244,7 +244,7 @@
       ],
       "parameters": {
         "method": "POST",
-        "url": "={{$env.META_GRAPH_API_VERSION ? 'https://graph.facebook.com/' + $env.META_GRAPH_API_VERSION + '/' + $env.INSTAGRAM_BUSINESS_ACCOUNT_ID + '/media' : 'https://graph.facebook.com/v24.0/' + $env.INSTAGRAM_BUSINESS_ACCOUNT_ID + '/media'}}",
+        "url": "={{'https://graph.facebook.com/' + ($env.META_GRAPH_API_VERSION || 'v25.0') + '/' + $('Get Instagram publishing credentials').item.json.instagramUserId + '/media'}}",
         "sendBody": true,
         "contentType": "form-urlencoded",
         "bodyParameters": {
@@ -267,7 +267,7 @@
             },
             {
               "name": "access_token",
-              "value": "={{$env.INSTAGRAM_ACCESS_TOKEN}}"
+              "value": "={{$('Get Instagram publishing credentials').item.json.accessToken}}"
             }
           ]
         },
@@ -302,7 +302,7 @@
       ],
       "parameters": {
         "method": "POST",
-        "url": "={{'https://graph.facebook.com/' + ($env.META_GRAPH_API_VERSION || 'v24.0') + '/' + $env.INSTAGRAM_BUSINESS_ACCOUNT_ID + '/media_publish'}}",
+        "url": "={{'https://graph.facebook.com/' + ($env.META_GRAPH_API_VERSION || 'v25.0') + '/' + $('Get Instagram publishing credentials').item.json.instagramUserId + '/media_publish'}}",
         "sendBody": true,
         "contentType": "form-urlencoded",
         "bodyParameters": {
@@ -313,7 +313,7 @@
             },
             {
               "name": "access_token",
-              "value": "={{$env.INSTAGRAM_ACCESS_TOKEN}}"
+              "value": "={{$('Get Instagram publishing credentials').item.json.accessToken}}"
             }
           ]
         },
@@ -624,6 +624,36 @@
         },
         "options": {}
       }
+    },
+    {
+      "id": "ig-credentials",
+      "name": "Get Instagram publishing credentials",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1680,
+        600
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "={{$env.NEXT_PUBLIC_APP_URL + '/api/internal/publishing/credentials'}}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "x-publishing-callback-secret",
+              "value": "={{$env.N8N_PUBLISHING_CALLBACK_SECRET}}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "json",
+        "specifyBody": "json",
+        "jsonBody": "={{ {ownerId:$('Build public video URL').item.json.ownerId,workspaceId:$('Build public video URL').item.json.workspaceId,platform:'instagram'} }}",
+        "options": {
+          "timeout": 30000
+        }
+      }
     }
   ],
   "connections": {
@@ -704,7 +734,7 @@
         ],
         [
           {
-            "node": "Create Instagram Reel container",
+            "node": "Get Instagram publishing credentials",
             "type": "main",
             "index": 0
           }
@@ -887,6 +917,17 @@
         [
           {
             "node": "Callback - Instagram publishing failed",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Instagram publishing credentials": {
+      "main": [
+        [
+          {
+            "node": "Create Instagram Reel container",
             "type": "main",
             "index": 0
           }
