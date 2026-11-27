@@ -30,9 +30,11 @@ export async function logWorkflowEvent(event: WorkflowEventInput) {
   // prevents noisy duplicate alerts when callbacks are retried repeatedly.
   if (status === "failed") {
     const since = new Date(Date.now() - 15 * 60 * 1000).toISOString();
-    const { data: existing, error: lookupError } = await db.from("app_notifications")
-      .select("id").eq("owner_id", event.ownerId).eq("notification_type", "workflow_failure")
-      .eq("resource_id", event.ideaId ?? null).gte("created_at", since).limit(1);
+    let lookup = db.from("app_notifications").select("id")
+      .eq("owner_id", event.ownerId).eq("notification_type", "workflow_failure")
+      .gte("created_at", since);
+    lookup = event.ideaId ? lookup.eq("resource_id", event.ideaId) : lookup.is("resource_id", null);
+    const { data: existing, error: lookupError } = await lookup.limit(1);
     if (!lookupError && !existing?.length) {
       const { error: notificationError } = await db.from("app_notifications").insert({
         owner_id: event.ownerId,
