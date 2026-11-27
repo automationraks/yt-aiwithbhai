@@ -35,7 +35,7 @@ export async function DELETE(_req:Request,ctx:{params:Promise<{id:string}>}){
  const db=await createSupabaseServerClient();if(!db)return NextResponse.json({error:"Supabase is not configured."},{status:503});
  const {data:{user},error:authError}=await db.auth.getUser();if(authError||!user)return NextResponse.json({error:"Unauthorized."},{status:401});
  const ws=await getActiveWorkspace(db,user.id);if(!ws)return NextResponse.json({error:"Create a workspace first."},{status:409});
- const {id}=await ctx.params;const {data:target,error}=await db.from("publishing_targets").select("id,idea_id,status,dispatch_status").eq("id",id).eq("owner_id",user.id).maybeSingle();
+ const {id}=await ctx.params;const {data:target,error}=await db.from("publishing_targets").select("id,idea_id,status,dispatch_status").eq("id",id).eq("owner_id",user.id).eq("channel_workspace_id",ws.id).maybeSingle();
  if(error||!target)return NextResponse.json({error:"Publishing target not found."},{status:404});
  if(target.status!=="scheduled"||target.dispatch_status==="sent")return NextResponse.json({error:"This target has already been dispatched to n8n. Cancel its active execution in n8n before changing its state; this API will not claim to stop an in-flight workflow."},{status:409});
  const {error:updateError}=await db.from("publishing_targets").update({status:"cancelled",updated_at:new Date().toISOString()}).eq("id",id).eq("owner_id",user.id).eq("channel_workspace_id",ws.id);
