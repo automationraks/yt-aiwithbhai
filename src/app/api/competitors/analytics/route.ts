@@ -68,6 +68,25 @@ export async function GET() {
       const source = (explorerEvidence.sampleVideos ?? []).find((sample) => sample.videoId === video.youtube_video_id);
       return { id: video.youtube_video_id, title: video.title, views: Number(video.view_count ?? 0), publishedAt: video.published_at, isShort: video.is_short, url: video.video_url ?? "https://www.youtube.com/watch?v=" + video.youtube_video_id, thumbnailUrl: video.thumbnail_url, matchedQuery: source?.matchedQuery ?? null };
     });
+    const shorts = videos.filter(video => video.is_short);
+    const longVideos = videos.filter(video => !video.is_short);
+    const formatBreakdown = {
+      shorts: { count: shorts.length, averageViews: shorts.length ? Math.round(shorts.reduce((sum, video) => sum + Number(video.view_count ?? 0), 0) / shorts.length) : 0 },
+      longForm: { count: longVideos.length, averageViews: longVideos.length ? Math.round(longVideos.reduce((sum, video) => sum + Number(video.view_count ?? 0), 0) / longVideos.length) : 0 },
+    };
+    const topicRules = [
+      ["RAG & retrieval", /\\b(rag|retrieval|embedding|vector database|vector db|semantic search)\\b/i],
+      ["AI agents", /\\b(agent|agentic|multi-agent|tool calling|orchestration)\\b/i],
+      ["AI architecture", /\\b(architecture|system design|enterprise|copilot|workflow)\\b/i],
+      ["LLMOps & evaluation", /\\b(llmops|evaluation|observability|tracing|monitoring|benchmark)\\b/i],
+      ["Inference & infrastructure", /\\b(inference|serving|gpu|quantization|vllm|latency)\\b/i],
+      ["AI security", /\\b(security|guardrail|safety|governance|prompt injection)\\b/i],
+      ["AI developer tools", /\\b(api|sdk|framework|langchain|llamaindex|developer tool|coding assistant)\\b/i],
+    ] as const;
+    const topicBreakdown = topicRules.map(([topic, pattern]) => {
+      const matches = videos.filter(video => pattern.test((video.title ?? "") + " " + (video.description ?? "")));
+      return { topic, count: matches.length, averageViews: matches.length ? Math.round(matches.reduce((sum, video) => sum + Number(video.view_count ?? 0), 0) / matches.length) : 0 };
+    }).filter(item => item.count > 0).sort((a,b) => b.count-a.count).slice(0,5);
     const topVideos = videos.slice().sort((a,b)=>Number(b.view_count??0)-Number(a.view_count??0)).slice(0,3)
       .map(video=>({title:video.title,views:Number(video.view_count??0),publishedAt:video.published_at,isShort:video.is_short}));
     return {
@@ -78,7 +97,7 @@ export async function GET() {
       subscribers: currentSubs, totalViews: Number(competitor.view_count ?? 0),
       subscriberDelta, growthPercent: growthPercent === null ? null : Number(growthPercent.toFixed(2)),
       snapshotCount: history.length, lastSnapshotAt: recent?.captured_at ?? null,
-      sampledVideos: videos.length, averageViews, uploadIntervalDays: uploadIntervalDays === null ? null : Number(uploadIntervalDays.toFixed(1)),
+      sampledVideos: videos.length, averageViews, formatBreakdown, topicBreakdown, uploadIntervalDays: uploadIntervalDays === null ? null : Number(uploadIntervalDays.toFixed(1)),
       momentumScore: Math.round(score), trend: subscriberDelta > 0 ? "growing" : subscriberDelta < 0 ? "declining" : "insufficient_data",
       latestVideos: videos.slice(0,5).map(video=>({ title:video.title, views:Number(video.view_count??0), publishedAt:video.published_at, isShort:video.is_short })),
     };
