@@ -19,6 +19,7 @@ export async function POST(req:Request){
  const db=createSupabaseAdminClient();
  const{data:target,error:targetError}=await db.from("publishing_targets").select("*").eq("owner_id",ownerId).eq("idea_id",ideaId).eq("platform",platform).maybeSingle();
  if(targetError||!target)return NextResponse.json({error:"Scheduled publishing target not found.",details:targetError?.message},{status:404});
+ if(target.status==="published" && status!=="published") return NextResponse.json({error:"A published platform status cannot be downgraded by a later callback."},{status:409});
  const patch={status,platform_post_id:typeof body.platformPostId==="string"?body.platformPostId:null,published_url:typeof body.publishedUrl==="string"?body.publishedUrl:null,published_at:status==="published"?(typeof body.publishedAt==="string"?body.publishedAt:new Date().toISOString()):null,error_message:status==="failed"?String(body.error??"Publishing failed").slice(0,1000):null,updated_at:new Date().toISOString()};
  const{error:updateError}=await db.from("publishing_targets").update(patch).eq("id",target.id);if(updateError)return NextResponse.json({error:"Could not update publication status.",details:updateError.message},{status:500});
  const{data:all,error:allError}=await db.from("publishing_targets").select("platform,status,published_url,published_at").eq("owner_id",ownerId).eq("idea_id",ideaId);
