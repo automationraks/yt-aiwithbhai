@@ -24,8 +24,25 @@ export async function GET(){
  const channels=await db.from("competitors").select("id,channel_title,channel_url").eq("owner_id",user.id);
  const channelMap=new Map((channels.data??[]).map(x=>[x.id,x]));
  const historical:ExplorerVideo[]=(legacy.data??[]).map(v=>{const c=channelMap.get(v.competitor_id??"");return{...v,platform:"youtube",external_video_id:v.youtube_video_id,permalink:v.video_url,source_feature:"historical_research",is_shortlisted:false,channelTitle:c?.channel_title??"Previously tracked channel",channelUrl:c?.channel_url??null};});
- const merged=[...videos.map(v=>({...v,is_shortlisted:true})),...historical.filter(v=>!videos.some(x=>x.platform==="youtube"&&x.external_video_id===v.youtube_video_id))];
- const summary={shortlisted:videos.length,youtube:videos.filter(x=>x.platform==="youtube").length,instagram:videos.filter(x=>x.platform==="instagram").length,historical:historical.length,totalViews:merged.reduce((n,v)=>n+Number(v.view_count??0),0),totalLikes:merged.reduce((n,v)=>n+Number(v.like_count??0),0),totalComments:merged.reduce((n,v)=>n+Number(v.comment_count??0),0)};
+ // Include discovered Instagram media even before the user shortlists it.
+ const {data: instagramSources,error:instagramError}=await db.from("instagram_content_sources")
+  .select("instagram_media_id,source_username,source_name,permalink,caption,thumbnail_url,timestamp,like_count,comments_count,media_type,media_product_type")
+  .eq("owner_id",user.id).order("timestamp",{ascending:false}).limit(100);
+ if(instagramError)return NextResponse.json({error:"Could not load discovered Instagram videos.",details:instagramError.message},{status:500});
+ const shortlistedExternal=new Set(social.filter(x=>x.platform==="instagram").map(x=>String(x.external_video_id)));
+ const discoveredInstagram:ExplorerVideo[]=(instagramSources??[]).map(v=>({
+  id:String(v.instagram_media_id),platform:"instagram",external_video_id:String(v.instagram_media_id),
+  title:String(v.caption??"Instagram video").slice(0,240),description:v.caption??null,published_at:v.timestamp??null,
+  duration_seconds:null,view_count:null,like_count:v.like_count??null,comment_count:v.comments_count??null,
+  is_short:true,thumbnail_url:v.thumbnail_url??null,video_url:v.permalink,permalink:v.permalink,
+  niche_relevance_score:null,niche_relevance_reason:null,channelTitle:String(v.source_name??v.source_username),
+  channelUrl:"https://www.instagram.com/"+String(v.source_username)+"/",is_shortlisted:shortlistedExternal.has(String(v.instagram_media_id)),
+  source_feature:"instagram_discovery"
+ }));
+ const merged=[...videos.map(v=>({...v,is_shortlisted:true})),
+  ...discoveredInstagram.filter(v=>!videos.some(x=>x.platform==="instagram"&&x.external_video_id===v.external_video_id)),
+  ...historical.filter(v=>!videos.some(x=>x.platform==="youtube"&&x.external_video_id===v.youtube_video_id))];
+ const summary={shortlisted:videos.length,youtube:videos.filter(x=>x.platform==="youtube").length,instagram:discoveredInstagram.length,historical:historical.length,totalViews:merged.reduce((n,v)=>n+Number(v.view_count??0),0),totalLikes:merged.reduce((n,v)=>n+Number(v.like_count??0),0),totalComments:merged.reduce((n,v)=>n+Number(v.comment_count??0),0)};
  return NextResponse.json({videos:merged,shortlists:videos,summary});
 }
 export async function POST(req:NextRequest){
