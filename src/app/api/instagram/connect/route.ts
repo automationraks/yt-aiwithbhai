@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { randomBytes } from "node:crypto";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
+import { getActiveWorkspace } from "@/lib/workspaces/context";
 
 export const runtime = "nodejs";
 
@@ -16,6 +17,9 @@ export async function GET() {
   if (!user) {
     return NextResponse.json({ error: "Unauthorized." }, { status: 401 });
   }
+
+  const workspace = await getActiveWorkspace(supabase, user.id);
+  if (!workspace) return NextResponse.json({ error: "Create a workspace first." }, { status: 409 });
 
   const appId = process.env.META_APP_ID;
   const appSecret = process.env.META_APP_SECRET;
@@ -40,6 +44,7 @@ export async function GET() {
   url.searchParams.set("config_id", configId);
 
   const response = NextResponse.redirect(url);
+  response.cookies.set("ig_oauth_workspace", workspace.id, { httpOnly: true, secure: process.env.NODE_ENV === "production", sameSite: "lax", path: "/api/instagram/callback", maxAge: 600 });
   response.cookies.set("ig_oauth_state", state, {
     httpOnly: true,
     secure: process.env.NODE_ENV === "production",
