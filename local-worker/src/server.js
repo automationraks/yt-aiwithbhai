@@ -49,6 +49,18 @@ async function process(row){
  const segments=j.segments.map(s=>({...s,durationSeconds:Number(s.durationSeconds)})),planTotal=segments.reduce((n,s)=>n+s.durationSeconds,0);
  if(target<30||target>60||Math.abs(planTotal-target)>1.5)throw new Error("Segment timeline must total 30–60 seconds and match the target duration.");
  await logEvent(row,"segment_render_started","segment_rendering","started","Rendering the approved storyboard into ordered video segments.",{segmentCount:segments.length});
+ const {data:sceneAssets,error:sceneAssetError}=await db.from("scene_asset_jobs").select("sequence,asset_storage_path,status")
+  .eq("owner_id",row.owner_id).eq("idea_id",row.idea_id).eq("status","completed").order("sequence",{ascending:true});
+ if(sceneAssetError)throw new Error("Could not load generated scene assets: "+sceneAssetError.message);
+ for(const asset of sceneAssets??[]){
+  if(!asset.asset_storage_path)continue;
+  const {data:blob,error:downloadError}=await db.storage.from("generated-videos").download(asset.asset_storage_path);
+  if(downloadError)throw new Error("Could not download generated scene asset "+asset.sequence+": "+downloadError.message);
+  const local=path.join(work,"scene-"+String(asset.sequence).padStart(2,"0")+".png");
+  await fs.writeFile(local,Buffer.from(await blob.arrayBuffer()));
+  const segment=segments.find(x=>x.sequence===asset.sequence);
+  if(segment)segment.visualAssetPath=local;
+ }
  const rendered=await renderSegments({job:{...j,segments},workDir:work,stockDir:stock,ffmpeg,ffprobe});
  await logEvent(row,"segment_render_completed","segment_rendering","completed","All video segments rendered in sequence.",{segmentCount:rendered.clips.length});
  const captionAsr=await transcribe(adjusted),srt=path.join(work,"captions.srt");await writeSubtitles(captionAsr,srt);
