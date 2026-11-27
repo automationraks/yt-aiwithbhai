@@ -18,7 +18,7 @@ export async function renderSegments({job,workDir,stockDir,ffmpeg,ffprobe}){
  const assets=await getAssets(stockDir),clips=[];
  for(let i=0;i<job.segments.length;i++){
   const seg=job.segments[i],duration=Number(seg.durationSeconds);if(!(duration>0&&duration<=7.01))throw new Error("Invalid seven-second segment duration.");
-  const asset=assets.length?assets[i%assets.length]:null,overlay=path.join(workDir,`overlay-${i+1}.png`);
+  const asset=seg.visualAssetPath|| (assets.length?assets[i%assets.length]:null),overlay=path.join(workDir,`overlay-${i+1}.png`);
   await sharp(Buffer.from(cardSvg(job,seg,asset))).png().toFile(overlay);
   const clip=path.join(workDir,`clip-${String(i+1).padStart(2,"0")}.mp4`),args=[];
   if(asset&&/\\.(mp4|mov|mkv)$/i.test(asset))args.push("-stream_loop","-1","-i",asset);else if(asset)args.push("-loop","1","-framerate","30","-i",asset);else args.push("-loop","1","-framerate","30","-i",overlay);
