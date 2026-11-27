@@ -19,14 +19,14 @@ export async function POST(){
  if(control?.enabled===false)return NextResponse.json({error:"Research automation is paused in Automation Control."},{status:423});
  const [yt,ig,competitors]=await Promise.all([
   db.from("videos").select("title,description,view_count,published_at,competitor_id").eq("is_niche_relevant",true).order("published_at",{ascending:false}).limit(300),
-  db.from("social_videos").select("title,description,view_count,published_at,platform,source_channel_name").eq("owner_id",user.id).eq("platform","instagram").order("published_at",{ascending:false}).limit(150),
+  db.from("instagram_content_sources").select("caption,source_username,timestamp,like_count,comments_count,permalink").eq("owner_id",user.id).order("timestamp",{ascending:false}).limit(150),
   db.from("competitors").select("id,channel_title,subscriber_count,view_count").eq("owner_id",user.id).eq("is_active",true).eq("ai_production_status","qualified").limit(100)
  ]);
  if(yt.error||ig.error||competitors.error)return NextResponse.json({error:"Could not collect research sources.",details:yt.error?.message??ig.error?.message??competitors.error?.message},{status:500});
  const competitorIds=(competitors.data??[]).map(c=>c.id),channels=competitors.data??[];
  const channelMap=new Map(channels.map(c=>[c.id,c.channel_title]));
  const youtubeVideos:Video[]=(yt.data??[]).filter(v=>competitorIds.includes(v.competitor_id)).map(v=>({...v,platform:"youtube",source_channel_name:channelMap.get(v.competitor_id)??"Tracked creator"}));
- const all=[...youtubeVideos,...(ig.data??[]) as Video[]],topics=rankTopics(all);
+ const all=[...youtubeVideos,...(ig.data??[]).map(x=>({title:x.caption??"Instagram post",description:x.caption??"",view_count:0,published_at:x.timestamp,platform:"instagram",source_channel_name:x.source_username}))],topics=rankTopics(all);
  const recent=all.filter(v=>v.published_at&&Date.now()-Date.parse(v.published_at)<=30*86400000);
  const stale=all.filter(v=>v.published_at&&Date.now()-Date.parse(v.published_at)>30*86400000);
  const contentGaps=topics.map(t=>({topic:t.name,signal:t.mentions<3?"Low coverage in saved competitor sample":"Covered by competitors; differentiate with implementation detail",sampleCount:t.mentions,opportunity:t.mentions<3?"Potential coverage gap; validate demand before production":"Build a distinct case study with measurable trade-offs"})).slice(0,7);
