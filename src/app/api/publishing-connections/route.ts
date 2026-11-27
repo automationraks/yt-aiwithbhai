@@ -14,7 +14,7 @@ export async function GET() {
   .eq("owner_id", user.id).eq("workspace_id", ws.id).order("platform");
  if (error) return NextResponse.json({ error: "Could not load registered accounts.", details: error.message }, { status: 500 });
  const {data:youtube}=await db.from("youtube_connections").select("channel_id,channel_title,channel_handle,connection_status,last_verified_at").eq("owner_id",user.id).eq("workspace_id",ws.id).maybeSingle();
- const {data:instagram}=await db.from("instagram_connections").select("instagram_user_id,instagram_username,connection_status:instagram_user_id,connected_at").eq("owner_id",user.id).eq("workspace_id",ws.id).maybeSingle();
+ const {data:instagram}=await db.from("instagram_connections").select("instagram_user_id,instagram_username,connected_at,token_expires_at").eq("owner_id",user.id).eq("workspace_id",ws.id).maybeSingle();
  const webhookConfigured = Boolean(process.env.N8N_PUBLISHING_WEBHOOK_URL);
  const callbackConfigured = Boolean(process.env.N8N_PUBLISHING_CALLBACK_SECRET);
  return NextResponse.json({
