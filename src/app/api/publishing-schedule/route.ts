@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
-import { logWorkflowEvent } from "@/lib/workflow-events";\nimport { getActiveWorkspace } from "@/lib/workspaces/context";
+import { logWorkflowEvent } from "@/lib/workflow-events";
+import { getActiveWorkspace } from "@/lib/workspaces/context";
 export const dynamic="force-dynamic";
 const validPlatform=(x:unknown):x is "youtube"|"instagram"=>x==="youtube"||x==="instagram";
 export async function GET(){
