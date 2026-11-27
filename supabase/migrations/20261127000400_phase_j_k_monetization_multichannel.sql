@@ -115,7 +115,7 @@ create table if not exists public.channel_accounts (
  metadata jsonb not null default '{}'::jsonb,
  created_at timestamptz not null default now(),
  updated_at timestamptz not null default now(),
- foreign key(workspace_id,owner_id) references public.channel_workspaces(id,owner_id) on delete cascade,
+ foreign key(workspace_id,owner_id) references public.channel_workspaces(id,owner_id) on delete restrict,
  unique(workspace_id,platform,external_account_id)
 );
 create index if not exists channel_accounts_owner_workspace_idx on public.channel_accounts(owner_id,workspace_id,platform);
@@ -157,7 +157,7 @@ create index if not exists channel_account_metrics_workspace_date_idx on public.
 alter table public.content_ideas add column if not exists channel_workspace_id uuid;
 alter table public.content_ideas drop constraint if exists content_ideas_channel_workspace_owner_fkey;
 alter table public.content_ideas add constraint content_ideas_channel_workspace_owner_fkey
- foreign key(channel_workspace_id,owner_id) references public.channel_workspaces(id,owner_id) on delete set null;
+ foreign key(channel_workspace_id,owner_id) references public.channel_workspaces(id,owner_id) on delete restrict;
 create index if not exists content_ideas_workspace_idx on public.content_ideas(owner_id,channel_workspace_id,created_at desc);
 
 alter table public.publishing_targets add column if not exists channel_workspace_id uuid;
