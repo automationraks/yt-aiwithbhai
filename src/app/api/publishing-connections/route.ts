@@ -13,16 +13,20 @@ export async function GET() {
   .select("id,platform,account_name,handle,connection_status,last_verified_at,profile_url")
   .eq("owner_id", user.id).eq("workspace_id", ws.id).order("platform");
  if (error) return NextResponse.json({ error: "Could not load registered accounts.", details: error.message }, { status: 500 });
+ const {data:youtube}=await db.from("youtube_connections").select("channel_id,channel_title,channel_handle,connection_status,last_verified_at").eq("owner_id",user.id).eq("workspace_id",ws.id).maybeSingle();
+ const {data:instagram}=await db.from("instagram_connections").select("instagram_user_id,instagram_username,connection_status:instagram_user_id,connected_at").eq("owner_id",user.id).eq("workspace_id",ws.id).maybeSingle();
  const webhookConfigured = Boolean(process.env.N8N_PUBLISHING_WEBHOOK_URL);
  const callbackConfigured = Boolean(process.env.N8N_PUBLISHING_CALLBACK_SECRET);
  return NextResponse.json({
   activeWorkspace: ws, connections: accounts ?? [],
   readiness: {
    n8nWebhook: webhookConfigured, callbackSecret: callbackConfigured,
-   youtubeOAuth: (accounts ?? []).some(x => x.platform === "youtube" && x.connection_status === "connected"),
-   instagramOAuth: (accounts ?? []).some(x => x.platform === "instagram" && x.connection_status === "connected"),
+   youtubeOAuth: youtube?.connection_status === "connected",
+   youtubeChannel: youtube ?? null,
+   instagramOAuth: Boolean(instagram?.instagram_user_id),
+   instagramAccount: instagram ?? null,
    canDispatch: webhookConfigured && callbackConfigured,
-   note: "A registered account is not an OAuth connection. Platform OAuth and token refresh must be completed in the configured publishing provider."
+   note: "OAuth credentials are stored encrypted per workspace. YouTube and Instagram publishing workflows must still be configured and tested in n8n."
   }
  });
 }
