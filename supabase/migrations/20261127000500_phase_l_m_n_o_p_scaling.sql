@@ -62,6 +62,7 @@ create index if not exists platform_analytics_imports_date_idx
  on public.platform_analytics_imports(owner_id,workspace_id,report_date desc);
 
 alter table public.content_intelligence_reports add column if not exists workspace_id uuid;
+alter table public.content_intelligence_reports drop constraint if exists content_intelligence_reports_owner_id_report_date_key;
 alter table public.monetization_entries add column if not exists workspace_id uuid;
 alter table public.affiliate_partners add column if not exists workspace_id uuid;
 alter table public.sponsorship_leads add column if not exists workspace_id uuid;
@@ -81,6 +82,7 @@ update public.content_roi_snapshots r set workspace_id=w.id
 update public.affiliate_performance_daily r set workspace_id=w.id
  from public.channel_workspaces w where r.owner_id=w.owner_id and w.is_default and r.workspace_id is null;
 
+create unique index if not exists content_intelligence_reports_owner_workspace_date_uidx on public.content_intelligence_reports(owner_id,workspace_id,report_date) where workspace_id is not null;
 create index if not exists content_intelligence_workspace_date_idx on public.content_intelligence_reports(owner_id,workspace_id,report_date desc);
 create index if not exists monetization_workspace_date_idx on public.monetization_entries(owner_id,workspace_id,entry_date desc);
 create index if not exists content_roi_workspace_date_idx on public.content_roi_snapshots(owner_id,workspace_id,snapshot_date desc);
