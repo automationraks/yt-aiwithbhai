@@ -1,7 +1,21 @@
--- Phase H completion + Phase I content intelligence persistence.
+-- Phase H hardening and Phase I content intelligence persistence.
+-- This application authenticates through app_sessions/app_users and uses a
+-- server-side service-role client. Keep owner IDs aligned with app_users.
+alter table public.workflow_event_logs
+  drop constraint if exists workflow_event_logs_workflow_check;
+alter table public.workflow_event_logs
+  drop constraint if exists workflow_event_logs_status_check;
+
+-- Allow authenticated application users to manage their own operational flags.
+drop policy if exists operations_controls_owner_all on public.operations_controls;
+create policy operations_controls_owner_all on public.operations_controls
+  for all to authenticated
+  using (owner_id = (select id from public.app_users where id = auth.uid()))
+  with check (owner_id = (select id from public.app_users where id = auth.uid()));
+
 create table if not exists public.content_intelligence_reports (
  id uuid primary key default gen_random_uuid(),
- owner_id uuid not null references auth.users(id) on delete cascade,
+ owner_id uuid not null references public.app_users(id) on delete cascade,
  report_date date not null,
  summary jsonb not null default '{}'::jsonb,
  trending_topics jsonb not null default '[]'::jsonb,
@@ -16,7 +30,9 @@ create index if not exists content_intelligence_reports_owner_date_idx
 alter table public.content_intelligence_reports enable row level security;
 drop policy if exists content_intelligence_reports_owner_all on public.content_intelligence_reports;
 create policy content_intelligence_reports_owner_all on public.content_intelligence_reports
- for all to authenticated using(owner_id=auth.uid()) with check(owner_id=auth.uid());
+ for all to authenticated
+ using (owner_id = (select id from public.app_users where id = auth.uid()))
+ with check (owner_id = (select id from public.app_users where id = auth.uid()));
 
 create index if not exists workflow_event_logs_owner_created_idx
  on public.workflow_event_logs(owner_id,created_at desc);
